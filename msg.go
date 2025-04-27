@@ -19,16 +19,31 @@ func ParseDNSMessage(buf []byte) (DNSMessage, error) {
 		return DNSMessage{}, err
 	}
 
-	answers, _, err := parseAnswers(buf, offset)
+	numAnswers := be.Uint16(buf[6:])
+	answers, offset, err := parseResources(buf, offset, numAnswers)
+	if err != nil {
+		return DNSMessage{}, err
+	}
+
+	numAuthorities := be.Uint16(buf[8:])
+	authorities, offset, err := parseResources(buf, offset, numAuthorities)
+	if err != nil {
+		return DNSMessage{}, err
+	}
+
+	numAdditional := be.Uint16(buf[10:])
+	additional, _, err := parseResources(buf, offset, numAdditional)
 	if err != nil {
 		return DNSMessage{}, err
 	}
 
 	return DNSMessage{
-		ID:        be.Uint16(buf),
-		Flags:     Flags(be.Uint16(buf[2:])),
-		Questions: questions,
-		Answers:   answers,
+		ID:          be.Uint16(buf),
+		Flags:       Flags(be.Uint16(buf[2:])),
+		Questions:   questions,
+		Answers:     answers,
+		Authorities: authorities,
+		Additional:  additional,
 	}, nil
 }
 
@@ -43,10 +58,12 @@ func MakeResponse(qry DNSMessage) DNSMessage {
 }
 
 type DNSMessage struct {
-	ID        uint16
-	Flags     Flags
-	Questions []Question
-	Answers   []Answer
+	ID          uint16
+	Flags       Flags
+	Questions   []Question
+	Answers     []Resource
+	Authorities []Resource
+	Additional  []Resource
 }
 
 func (m DNSMessage) WriteTo(buf []byte) ([]byte, error) {
@@ -54,8 +71,8 @@ func (m DNSMessage) WriteTo(buf []byte) ([]byte, error) {
 	buf = be.AppendUint16(buf, uint16(m.Flags))
 	buf = be.AppendUint16(buf, uint16(len(m.Questions)))
 	buf = be.AppendUint16(buf, uint16(len(m.Answers)))
-	buf = be.AppendUint16(buf, 0)
-	buf = be.AppendUint16(buf, 0)
+	buf = be.AppendUint16(buf, uint16(len(m.Authorities)))
+	buf = be.AppendUint16(buf, uint16(len(m.Additional)))
 
 	nc := NewNameCompressor()
 
@@ -66,57 +83,92 @@ func (m DNSMessage) WriteTo(buf []byte) ([]byte, error) {
 		buf = be.AppendUint16(buf, uint16(question.Class))
 	}
 
-	for _, answer := range m.Answers {
-		buf = appendNames(buf, nc, answer.Names)
-
-		buf = be.AppendUint16(buf, uint16(answer.Type))
-		buf = be.AppendUint16(buf, uint16(answer.Class))
-
-		buf = be.AppendUint32(buf, uint32(answer.TTL.Seconds()))
-
-		switch answer.Type {
-		case A:
-			buf = be.AppendUint16(buf, 4)
-			ip, ok := answer.ResourceData.(net.IP)
-			if !ok || ip.To4() == nil {
-				return nil, errors.New("mismatched resource type")
-			}
-			buf = append(buf, ip.To4()...)
-		case AAAA:
-			buf = be.AppendUint16(buf, 16)
-			ip, ok := answer.ResourceData.(net.IP)
-			if !ok || ip.To16() == nil {
-				return nil, errors.New("mismatched resource type")
-			}
-			buf = append(buf, ip.To16()...)
-		case CNAME:
-			names, ok := answer.ResourceData.([]string)
-			if !ok {
-				return nil, fmt.Errorf("mismatched resource type %s / %T",
-					answer.Type, answer.ResourceData)
-			}
-			buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
-				return appendNames(buf, nc, names)
-			})
-		case MX:
-			mx, ok := answer.ResourceData.(MXRecord)
-			if !ok {
-				return nil, fmt.Errorf("mismatched resource type %s / %T",
-					answer.Type, answer.ResourceData)
-			}
-			buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
-				buf = be.AppendUint16(buf, mx.Preference)
-				return appendNames(buf, nc, mx.MailExchange)
-			})
-		default:
-			bytes, ok := answer.ResourceData.([]byte)
-			if !ok {
-				return nil, fmt.Errorf("mismatched resource type %s / %T",
-					answer.Type, answer.ResourceData)
-			}
-			buf = be.AppendUint16(buf, uint16(len(bytes)))
-			buf = append(buf, bytes...)
+	for _, res := range m.Answers {
+		var err error
+		buf, err = writeResource(buf, nc, res)
+		if err != nil {
+			return nil, err
 		}
+	}
+
+	for _, res := range m.Authorities {
+		var err error
+		buf, err = writeResource(buf, nc, res)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for _, res := range m.Additional {
+		var err error
+		buf, err = writeResource(buf, nc, res)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return buf, nil
+}
+
+func writeResource(buf []byte, nc NameCompressor, res Resource) ([]byte, error) {
+	buf = appendNames(buf, nc, res.Names)
+
+	buf = be.AppendUint16(buf, uint16(res.Type))
+	buf = be.AppendUint16(buf, uint16(res.Class))
+
+	buf = be.AppendUint32(buf, uint32(res.TTL.Seconds()))
+
+	switch res.Type {
+	case A:
+		buf = be.AppendUint16(buf, 4)
+		ip, ok := res.Data.(net.IP)
+		if !ok || ip.To4() == nil {
+			return nil, errors.New("mismatched resource type")
+		}
+		buf = append(buf, ip.To4()...)
+	case NS:
+		names, ok := res.Data.([]string)
+		if !ok {
+			return nil, fmt.Errorf("mismatched resource type %s / %T",
+				res.Type, res.Data)
+		}
+		buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
+			return appendNames(buf, nc, names)
+		})
+	case AAAA:
+		buf = be.AppendUint16(buf, 16)
+		ip, ok := res.Data.(net.IP)
+		if !ok || ip.To16() == nil {
+			return nil, errors.New("mismatched resource type")
+		}
+		buf = append(buf, ip.To16()...)
+	case CNAME:
+		names, ok := res.Data.([]string)
+		if !ok {
+			return nil, fmt.Errorf("mismatched resource type %s / %T",
+				res.Type, res.Data)
+		}
+		buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
+			return appendNames(buf, nc, names)
+		})
+	case MX:
+		mx, ok := res.Data.(MXRecord)
+		if !ok {
+			return nil, fmt.Errorf("mismatched resource type %s / %T",
+				res.Type, res.Data)
+		}
+		buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
+			buf = be.AppendUint16(buf, mx.Preference)
+			return appendNames(buf, nc, mx.MailExchange)
+		})
+	default:
+		bytes, ok := res.Data.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("mismatched resource type %s / %T",
+				res.Type, res.Data)
+		}
+		buf = be.AppendUint16(buf, uint16(len(bytes)))
+		buf = append(buf, bytes...)
 	}
 
 	return buf, nil
@@ -173,22 +225,21 @@ func parseQuestions(buf []byte) ([]Question, int, error) {
 	return questions, offset, nil
 }
 
-func parseAnswers(buf []byte, offset int) ([]Answer, int, error) {
-	numAnswers := be.Uint16(buf[6:])
-	if numAnswers == 0 {
+func parseResources(buf []byte, offset int, count uint16) ([]Resource, int, error) {
+	if count == 0 {
 		return nil, offset, nil
 	}
-	answers := make([]Answer, numAnswers)
-	for i := range numAnswers {
-		var answer Answer
+	resources := make([]Resource, count)
+	for i := range count {
+		var resource Resource
 		var err error
-		answer, offset, err = parseAnswer(buf, offset)
+		resource, offset, err = parseResource(buf, offset)
 		if err != nil {
 			return nil, 0, err
 		}
-		answers[i] = answer
+		resources[i] = resource
 	}
-	return answers, offset, nil
+	return resources, offset, nil
 }
 
 func (m DNSMessage) String() string {
@@ -363,26 +414,26 @@ const (
 	ANY_CLASS QueryClass = 255
 )
 
-type Answer struct {
-	Names        []string
-	Type         QueryType
-	Class        QueryClass
-	TTL          time.Duration
-	ResourceData any
+type Resource struct {
+	Names []string
+	Type  QueryType
+	Class QueryClass
+	TTL   time.Duration
+	Data  any
 }
 
-func parseAnswer(buf []byte, offset int) (Answer, int, error) {
+func parseResource(buf []byte, offset int) (Resource, int, error) {
 	if len(buf) < 2 {
-		return Answer{}, 0, io.ErrShortBuffer
+		return Resource{}, 0, io.ErrShortBuffer
 	}
 
 	names, offset, err := parseNames(buf, offset)
 	if err != nil {
-		return Answer{}, 0, err
+		return Resource{}, 0, err
 	}
 
 	if len(buf[offset:]) < 10 {
-		return Answer{}, 0, io.ErrShortBuffer
+		return Resource{}, 0, io.ErrShortBuffer
 	}
 
 	qType := QueryType(be.Uint16(buf[offset:]))
@@ -397,24 +448,29 @@ func parseAnswer(buf []byte, offset int) (Answer, int, error) {
 	offset += 2
 
 	if len(buf[offset:]) < int(resourceDataLen) {
-		return Answer{}, 0, io.ErrShortBuffer
+		return Resource{}, 0, io.ErrShortBuffer
 	}
 
 	resourceDataBytes := buf[offset:][:resourceDataLen]
 	var resourceData any
 	if qType == A && resourceDataLen == 4 {
 		resourceData = net.IP(resourceDataBytes)
+	} else if qType == NS {
+		resourceData, _, err = parseNames(buf, offset)
+		if err != nil {
+			return Resource{}, 0, err
+		}
 	} else if qType == AAAA && resourceDataLen == 16 {
 		resourceData = net.IP(resourceDataBytes)
 	} else if qType == MX {
 		if len(resourceDataBytes) < 2 {
-			return Answer{}, 0, io.ErrShortBuffer
+			return Resource{}, 0, io.ErrShortBuffer
 		}
 		preference := be.Uint16(resourceDataBytes)
 		var names []string
 		names, _, err = parseNames(buf, offset+2)
 		if err != nil {
-			return Answer{}, 0, err
+			return Resource{}, 0, err
 		}
 		resourceData = MXRecord{
 			Preference:   preference,
@@ -423,7 +479,7 @@ func parseAnswer(buf []byte, offset int) (Answer, int, error) {
 	} else if qType == CNAME {
 		resourceData, _, err = parseNames(buf, offset)
 		if err != nil {
-			return Answer{}, 0, err
+			return Resource{}, 0, err
 		}
 	} else {
 		// fallback on raw bytes
@@ -432,12 +488,12 @@ func parseAnswer(buf []byte, offset int) (Answer, int, error) {
 	}
 	offset += int(resourceDataLen)
 
-	return Answer{
-		Names:        names,
-		Type:         qType,
-		Class:        qClass,
-		TTL:          ttl,
-		ResourceData: resourceData,
+	return Resource{
+		Names: names,
+		Type:  qType,
+		Class: qClass,
+		TTL:   ttl,
+		Data:  resourceData,
 	}, offset, nil
 }
 

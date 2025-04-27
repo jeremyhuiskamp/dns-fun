@@ -46,17 +46,17 @@ func (s *Server) Listen() error {
 		fmt.Printf("%s\n", msg.String())
 		rsp := MakeResponse(msg)
 		for _, question := range msg.Questions {
-			answer := Answer{
+			answer := Resource{
 				Names: question.Names,
 				Class: question.Class,
 				Type:  question.Type,
 				TTL:   120 * time.Second,
 			}
 			if question.Type == A || question.Type == AAAA {
-				answer.ResourceData = net.ParseIP("1.2.3.4")
+				answer.Data = net.ParseIP("1.2.3.4")
 				rsp.Answers = append(rsp.Answers, answer)
 			} else if question.Type == MX {
-				answer.ResourceData = MXRecord{
+				answer.Data = MXRecord{
 					Preference: 10,
 					MailExchange: []string{
 						"smtp",
