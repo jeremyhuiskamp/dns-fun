@@ -82,6 +82,13 @@ func (m DNSMessage) WriteTo(buf []byte) ([]byte, error) {
 				return nil, errors.New("mismatched resource type")
 			}
 			buf = append(buf, ip.To4()...)
+		case AAAA:
+			buf = be.AppendUint16(buf, 16)
+			ip, ok := answer.ResourceData.(net.IP)
+			if !ok || ip.To16() == nil {
+				return nil, errors.New("mismatched resource type")
+			}
+			buf = append(buf, ip.To16()...)
 		case CNAME:
 			names, ok := answer.ResourceData.([]string)
 			if !ok {
@@ -377,6 +384,8 @@ func parseAnswer(buf []byte, offset int) (Answer, int, error) {
 	resourceDataBytes := buf[offset:][:resourceDataLen]
 	var resourceData any
 	if qType == A && resourceDataLen == 4 {
+		resourceData = net.IP(resourceDataBytes)
+	} else if qType == AAAA && resourceDataLen == 16 {
 		resourceData = net.IP(resourceDataBytes)
 	} else if qType == CNAME {
 		resourceData, _, err = parseNames(buf, offset)

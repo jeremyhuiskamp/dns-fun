@@ -185,7 +185,7 @@ func TestParseResponse(t *testing.T) {
 		}
 
 		if answer.TTL != 0x98*time.Second {
-			t.Errorf("expected ttl 98s but got %s", answer.TTL)
+			t.Errorf("expected ttl 0x98s but got %s", answer.TTL)
 		}
 
 		if ipv4, ok := answer.ResourceData.(net.IP); ok {
@@ -429,4 +429,100 @@ func TestMakeResponse(t *testing.T) {
 		t.Errorf("expected same questions in rsp\n  exp %#v\n  got %#v",
 			q.Questions, rsp.Questions)
 	}
+}
+
+var googleAAAAResponse = []byte{
+	0x65, 0xe5,
+	0x81, 0x80,
+	0x00, 0x01,
+	0x00, 0x01,
+	0x00, 0x00,
+	0x00, 0x00,
+	// question 1
+	0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,
+	0x03, 0x63, 0x6f, 0x6d,
+	0x00,
+	0x00, 0x1c, // AAAA
+	0x00, 0x01,
+	// answer 1
+	0xc0, 0x0c,
+	0x00, 0x1c, // AAAA
+	0x00, 0x01,
+	0x00, 0x00, 0x00, 0x62,
+	0x00, 0x10, // length 16
+	0x2a, 0x00, 0x14, 0x50, // ipv6 addr
+	0x40, 0x01, 0x08, 0x13, // ...
+	0x00, 0x00, 0x00, 0x00, // ...
+	0x00, 0x00, 0x20, 0x0e, // ...
+}
+
+func TestParseAAAAResponse(t *testing.T) {
+	q, err := dns.ParseDNSMessage(googleAAAAResponse)
+	if err != nil {
+		t.Fatalf("unexpected error parsing: %s", err)
+	}
+
+	questions := q.Questions
+	if count := len(questions); count != 1 {
+		t.Errorf("expected 1 question, got %d", count)
+	} else {
+		question := questions[0]
+		if !slices.Equal(question.Names, []string{
+			"google", "com",
+		}) {
+			t.Errorf("expected query for google.com, got %q",
+				question.Names)
+		}
+
+		if got := question.Type; got != dns.AAAA {
+			t.Errorf("expected query type AAAA, got %s", got)
+		}
+
+		if got := question.Class; got != dns.IN {
+			t.Errorf("expected query class IN, got %s", got)
+		}
+	}
+
+	answers := q.Answers
+	if count := len(answers); count != 1 {
+		t.Errorf("expected 1 answer, got %d", count)
+	} else {
+		answer := answers[0]
+
+		if !slices.Equal(answer.Names, []string{
+			"google", "com",
+		}) {
+			t.Errorf("expected query for google.com, got %q",
+				answer.Names)
+		}
+
+		if got := answer.Type; got != dns.AAAA {
+			t.Errorf("expected query type AAAA, got %s", got)
+		}
+
+		if got := answer.Class; got != dns.IN {
+			t.Errorf("expected query class IN, got %s", got)
+		}
+
+		if answer.TTL != 98*time.Second {
+			t.Errorf("expected ttl 98s but got %s", answer.TTL)
+		}
+
+		if ip, ok := answer.ResourceData.(net.IP); ok {
+			exp := "2a00:1450:4001:813::200e"
+			if !ip.Equal(net.ParseIP(exp)) {
+				t.Errorf("expected addr %s but got %s", exp, ip)
+			}
+		} else {
+			t.Errorf("expected ip addr but got %T", answer.ResourceData)
+		}
+	}
+}
+
+func TestRoundTripAAAAResponse(t *testing.T) {
+	roundTripMessage(t, googleAAAAResponse)
+}
+
+func TestCompressionAAAAResponse(t *testing.T) {
+	reserialisingShouldntExpand(t, googleAAAAResponse)
 }

@@ -46,7 +46,7 @@ func (s *Server) Listen() error {
 		fmt.Printf("%s\n", msg.String())
 		rsp := MakeResponse(msg)
 		for _, question := range msg.Questions {
-			if question.Type == A {
+			if question.Type == A || question.Type == AAAA {
 				answer := Answer{
 					Names:        question.Names,
 					Class:        question.Class,
