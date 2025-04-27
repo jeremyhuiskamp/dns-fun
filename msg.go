@@ -347,7 +347,7 @@ type Question struct {
 }
 
 func parseQuestion(buf []byte, offset int) (Question, int, error) {
-	if len(buf) < 1 {
+	if noSpace(buf, offset, 1) {
 		return Question{}, 0, io.ErrShortBuffer
 	}
 
@@ -356,7 +356,7 @@ func parseQuestion(buf []byte, offset int) (Question, int, error) {
 		return Question{}, 0, err
 	}
 
-	if len(buf[offset:]) < 4 {
+	if noSpace(buf, offset, 4) {
 		return Question{}, 0, io.ErrShortBuffer
 	}
 
@@ -423,7 +423,7 @@ type Resource struct {
 }
 
 func parseResource(buf []byte, offset int) (Resource, int, error) {
-	if len(buf) < 2 {
+	if noSpace(buf, offset, 2) {
 		return Resource{}, 0, io.ErrShortBuffer
 	}
 
@@ -432,7 +432,7 @@ func parseResource(buf []byte, offset int) (Resource, int, error) {
 		return Resource{}, 0, err
 	}
 
-	if len(buf[offset:]) < 10 {
+	if noSpace(buf, offset, 10) {
 		return Resource{}, 0, io.ErrShortBuffer
 	}
 
@@ -447,7 +447,7 @@ func parseResource(buf []byte, offset int) (Resource, int, error) {
 	resourceDataLen := be.Uint16(buf[offset:])
 	offset += 2
 
-	if len(buf[offset:]) < int(resourceDataLen) {
+	if noSpace(buf, offset, int(resourceDataLen)) {
 		return Resource{}, 0, io.ErrShortBuffer
 	}
 
@@ -498,7 +498,7 @@ func parseResource(buf []byte, offset int) (Resource, int, error) {
 }
 
 func parseNames(buf []byte, offset int) ([]string, int, error) {
-	if len(buf[offset:]) < 1 {
+	if noSpace(buf, offset, 1) {
 		return nil, 0, io.ErrShortBuffer
 	}
 
@@ -506,7 +506,7 @@ func parseNames(buf []byte, offset int) ([]string, int, error) {
 	nameLen := uint(buf[offset])
 	for nameLen > 0 {
 		if nameLen&0b1100_0000 == 0b1100_0000 {
-			if len(buf[offset:]) < 2 {
+			if noSpace(buf, offset, 2) {
 				return nil, 0, io.ErrShortBuffer
 			}
 			newOffset := be.Uint16(buf[offset:])
@@ -517,7 +517,7 @@ func parseNames(buf []byte, offset int) ([]string, int, error) {
 		}
 
 		offset++
-		if len(buf[offset:]) < int(nameLen)+1 {
+		if noSpace(buf, offset, int(nameLen)+1) {
 			return nil, 0, io.ErrShortBuffer
 		}
 
@@ -539,6 +539,10 @@ func parseNames(buf []byte, offset int) ([]string, int, error) {
 type MXRecord struct {
 	Preference   uint16
 	MailExchange []string
+}
+
+func noSpace(buf []byte, offset int, required int) bool {
+	return len(buf) < offset+required
 }
 
 var be = binary.BigEndian
