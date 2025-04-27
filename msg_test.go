@@ -526,3 +526,105 @@ func TestRoundTripAAAAResponse(t *testing.T) {
 func TestCompressionAAAAResponse(t *testing.T) {
 	reserialisingShouldntExpand(t, googleAAAAResponse)
 }
+
+var googleMXResponse = []byte{
+	0x8a, 0xb1,
+	0x81, 0x80,
+	0x00, 0x01,
+	0x00, 0x01,
+	0x00, 0x00,
+	0x00, 0x00,
+	// question
+	0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,
+	0x03, 0x63, 0x6f, 0x6d,
+	0x00,
+	0x00, 0x0f, // MX
+	0x00, 0x01,
+	// answer
+	0xc0, 0x0c,
+	0x00, 0x0f,
+	0x00, 0x01,
+	0x00, 0x00, 0x01, 0x2c,
+	0x00, 0x09,
+	0x00, 0x0a, // preference
+	0x04, 0x73, 0x6d, 0x74, 0x70, 0xc0, 0x0c, // host
+}
+
+func TestParseMXResponse(t *testing.T) {
+	q, err := dns.ParseDNSMessage(googleMXResponse)
+	if err != nil {
+		t.Fatalf("unexpected error parsing: %s", err)
+	}
+
+	questions := q.Questions
+	if count := len(questions); count != 1 {
+		t.Errorf("expected 1 question, got %d", count)
+	} else {
+		question := questions[0]
+		if !slices.Equal(question.Names, []string{
+			"google", "com",
+		}) {
+			t.Errorf("expected query for google.com, got %q",
+				question.Names)
+		}
+
+		if got := question.Type; got != dns.MX {
+			t.Errorf("expected query type MX, got %s", got)
+		}
+
+		if got := question.Class; got != dns.IN {
+			t.Errorf("expected query class IN, got %s", got)
+		}
+	}
+
+	answers := q.Answers
+	if count := len(answers); count != 1 {
+		t.Errorf("expected 1 answer, got %d", count)
+	} else {
+		answer := answers[0]
+
+		if !slices.Equal(answer.Names, []string{
+			"google", "com",
+		}) {
+			t.Errorf("expected query for google.com, got %q",
+				answer.Names)
+		}
+
+		if got := answer.Type; got != dns.MX {
+			t.Errorf("expected query type MX, got %s", got)
+		}
+
+		if got := answer.Class; got != dns.IN {
+			t.Errorf("expected query class IN, got %s", got)
+		}
+
+		if answer.TTL != 5*time.Minute {
+			t.Errorf("expected ttl 5m but got %s", answer.TTL)
+		}
+
+		if mx, ok := answer.ResourceData.(dns.MXRecord); !ok {
+			t.Errorf("expected MX record but got %T", answer.ResourceData)
+		} else {
+			if mx.Preference != 10 {
+				t.Errorf("expected preference 10, but got %d",
+					mx.Preference)
+			}
+			if !slices.Equal(mx.MailExchange, []string{
+				"smtp",
+				"google",
+				"com",
+			}) {
+				t.Errorf("expected mail exchange smtp.google.com, got %s",
+					mx.MailExchange)
+			}
+		}
+	}
+}
+
+func TestRoundTripMXResponse(t *testing.T) {
+	roundTripMessage(t, googleMXResponse)
+}
+
+func TestCompressionMXResponse(t *testing.T) {
+	reserialisingShouldntExpand(t, googleMXResponse)
+}

@@ -95,12 +95,19 @@ func (m DNSMessage) WriteTo(buf []byte) ([]byte, error) {
 				return nil, fmt.Errorf("mismatched resource type %s / %T",
 					answer.Type, answer.ResourceData)
 			}
-			lenOffset := len(buf)
-			buf = be.AppendUint16(buf, 0) // placeholder
-			lenBeforeNames := len(buf)
-			buf = appendNames(buf, nc, names)
-			lenAfterNames := len(buf)
-			be.PutUint16(buf[lenOffset:], uint16(lenAfterNames-lenBeforeNames))
+			buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
+				return appendNames(buf, nc, names)
+			})
+		case MX:
+			mx, ok := answer.ResourceData.(MXRecord)
+			if !ok {
+				return nil, fmt.Errorf("mismatched resource type %s / %T",
+					answer.Type, answer.ResourceData)
+			}
+			buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
+				buf = be.AppendUint16(buf, mx.Preference)
+				return appendNames(buf, nc, mx.MailExchange)
+			})
 		default:
 			bytes, ok := answer.ResourceData.([]byte)
 			if !ok {
@@ -113,6 +120,18 @@ func (m DNSMessage) WriteTo(buf []byte) ([]byte, error) {
 	}
 
 	return buf, nil
+}
+
+// writeVariableLengthDataToBuf wraps another function to
+// prefix the data written with its length.
+func writeVariableLengthDataToBuf(buf []byte, doWrite func(buf []byte) []byte) []byte {
+	lenOffset := len(buf)
+	buf = be.AppendUint16(buf, 0) // placeholder
+	lenBeforeData := len(buf)
+	buf = doWrite(buf)
+	dataLen := len(buf) - lenBeforeData
+	be.PutUint16(buf[lenOffset:], uint16(dataLen))
+	return buf
 }
 
 func appendNames(buf []byte, nc NameCompressor, names []string) []byte {
@@ -387,6 +406,20 @@ func parseAnswer(buf []byte, offset int) (Answer, int, error) {
 		resourceData = net.IP(resourceDataBytes)
 	} else if qType == AAAA && resourceDataLen == 16 {
 		resourceData = net.IP(resourceDataBytes)
+	} else if qType == MX {
+		if len(resourceDataBytes) < 2 {
+			return Answer{}, 0, io.ErrShortBuffer
+		}
+		preference := be.Uint16(resourceDataBytes)
+		var names []string
+		names, _, err = parseNames(buf, offset+2)
+		if err != nil {
+			return Answer{}, 0, err
+		}
+		resourceData = MXRecord{
+			Preference:   preference,
+			MailExchange: names,
+		}
 	} else if qType == CNAME {
 		resourceData, _, err = parseNames(buf, offset)
 		if err != nil {
@@ -445,6 +478,11 @@ func parseNames(buf []byte, offset int) ([]string, int, error) {
 	offset++
 
 	return names, offset, nil
+}
+
+type MXRecord struct {
+	Preference   uint16
+	MailExchange []string
 }
 
 var be = binary.BigEndian
