@@ -68,11 +68,9 @@ func TestParseQuery(t *testing.T) {
 		t.Errorf("expected 1 question, got %d", count)
 	} else {
 		question := questions[0]
-		if !slices.Equal(question.Names, []string{
-			"google", "com",
-		}) {
+		if !slices.Equal(question.Name, name("google", "com")) {
 			t.Errorf("expected query for google.com, got %q",
-				question.Names)
+				question.Name)
 		}
 
 		if got := question.Type; got != dns.A {
@@ -146,11 +144,9 @@ func TestParseResponse(t *testing.T) {
 		t.Errorf("expected 1 question, got %d", count)
 	} else {
 		question := questions[0]
-		if !slices.Equal(question.Names, []string{
-			"google", "com",
-		}) {
+		if !slices.Equal(question.Name, name("google", "com")) {
 			t.Errorf("expected query for google.com, got %q",
-				question.Names)
+				question.Name)
 		}
 
 		if got := question.Type; got != dns.A {
@@ -168,11 +164,11 @@ func TestParseResponse(t *testing.T) {
 	} else {
 		answer := answers[0]
 
-		if !slices.Equal(answer.Names, []string{
+		if !slices.Equal(answer.Name, dns.Name([]dns.Label{
 			"google", "com",
-		}) {
+		})) {
 			t.Errorf("expected query for google.com, got %q",
-				answer.Names)
+				answer.Name)
 		}
 
 		if got := answer.Type; got != dns.A {
@@ -263,47 +259,23 @@ func TestParseResponseWithCNAME(t *testing.T) {
 
 	for i, exp := range []dns.Resource{
 		{
-			Names: []string{
-				"www",
-				"thoughtworks",
-				"com",
-			},
-			Data: []string{
-				"dsxs7k5dq5qgj",
-				"cloudfront",
-				"net",
-			},
+			Name: name("www", "thoughtworks", "com"),
+			Data: name("dsxs7k5dq5qgj", "cloudfront", "net"),
 		},
 		{
-			Names: []string{
-				"dsxs7k5dq5qgj",
-				"cloudfront",
-				"net",
-			},
+			Name: name("dsxs7k5dq5qgj", "cloudfront", "net"),
 			Data: net.ParseIP("3.161.82.122"),
 		},
 		{
-			Names: []string{
-				"dsxs7k5dq5qgj",
-				"cloudfront",
-				"net",
-			},
+			Name: name("dsxs7k5dq5qgj", "cloudfront", "net"),
 			Data: net.ParseIP("3.161.82.112"),
 		},
 		{
-			Names: []string{
-				"dsxs7k5dq5qgj",
-				"cloudfront",
-				"net",
-			},
+			Name: name("dsxs7k5dq5qgj", "cloudfront", "net"),
 			Data: net.ParseIP("3.161.82.54"),
 		},
 		{
-			Names: []string{
-				"dsxs7k5dq5qgj",
-				"cloudfront",
-				"net",
-			},
+			Name: name("dsxs7k5dq5qgj", "cloudfront", "net"),
 			Data: net.ParseIP("3.161.82.125"),
 		},
 	} {
@@ -319,9 +291,9 @@ func checkNameAndData(
 	exp dns.Resource,
 	got dns.Resource,
 ) {
-	if !slices.Equal(got.Names, exp.Names) {
-		t.Errorf("incorrect names\n  exp: %s,\n  got %s",
-			exp.Names, got.Names)
+	if !slices.Equal(got.Name, exp.Name) {
+		t.Errorf("incorrect name\n  exp: %s,\n  got %s",
+			exp.Name, got.Name)
 	}
 
 	expIP, expIsIP := exp.Data.(net.IP)
@@ -466,11 +438,9 @@ func TestParseAAAAResponse(t *testing.T) {
 		t.Errorf("expected 1 question, got %d", count)
 	} else {
 		question := questions[0]
-		if !slices.Equal(question.Names, []string{
-			"google", "com",
-		}) {
+		if !slices.Equal(question.Name, name("google", "com")) {
 			t.Errorf("expected query for google.com, got %q",
-				question.Names)
+				question.Name)
 		}
 
 		if got := question.Type; got != dns.AAAA {
@@ -488,11 +458,9 @@ func TestParseAAAAResponse(t *testing.T) {
 	} else {
 		answer := answers[0]
 
-		if !slices.Equal(answer.Names, []string{
-			"google", "com",
-		}) {
+		if !slices.Equal(answer.Name, name("google", "com")) {
 			t.Errorf("expected query for google.com, got %q",
-				answer.Names)
+				answer.Name)
 		}
 
 		if got := answer.Type; got != dns.AAAA {
@@ -560,11 +528,9 @@ func TestParseMXResponse(t *testing.T) {
 		t.Errorf("expected 1 question, got %d", count)
 	} else {
 		question := questions[0]
-		if !slices.Equal(question.Names, []string{
-			"google", "com",
-		}) {
+		if !slices.Equal(question.Name, name("google", "com")) {
 			t.Errorf("expected query for google.com, got %q",
-				question.Names)
+				question.Name)
 		}
 
 		if got := question.Type; got != dns.MX {
@@ -582,11 +548,9 @@ func TestParseMXResponse(t *testing.T) {
 	} else {
 		answer := answers[0]
 
-		if !slices.Equal(answer.Names, []string{
-			"google", "com",
-		}) {
+		if !slices.Equal(answer.Name, name("google", "com")) {
 			t.Errorf("expected query for google.com, got %q",
-				answer.Names)
+				answer.Name)
 		}
 
 		if got := answer.Type; got != dns.MX {
@@ -608,11 +572,7 @@ func TestParseMXResponse(t *testing.T) {
 				t.Errorf("expected preference 10, but got %d",
 					mx.Preference)
 			}
-			if !slices.Equal(mx.MailExchange, []string{
-				"smtp",
-				"google",
-				"com",
-			}) {
+			if !slices.Equal(mx.MailExchange, name("smtp", "google", "com")) {
 				t.Errorf("expected mail exchange smtp.google.com, got %s",
 					mx.MailExchange)
 			}
@@ -909,17 +869,18 @@ func TestParseGoogleRootAResponses(t *testing.T) {
 	checkIP(t, rsp.Additional, 25, dns.AAAA, "2001:502:1ca1::30", "e", "gtld-servers", "net")
 }
 
-func checkNS(t *testing.T, authorities []dns.Resource, i int, expNames ...string) {
+func checkNS(t *testing.T, authorities []dns.Resource, i int, expName ...dns.Label) {
+	t.Helper()
 	authority := authorities[i]
 	if authority.Type != dns.NS {
 		t.Errorf("authority %d expected to be NS, got %s",
 			i, authority.Type)
 	}
 
-	gotNames, _ := authority.Data.([]string)
-	if !slices.Equal(gotNames, expNames) {
-		t.Errorf("authority %d has unexpected names\n  exp %q\n  got %q",
-			i, expNames, gotNames)
+	gotName, _ := authority.Data.(dns.Name)
+	if !slices.Equal(gotName, expName) {
+		t.Errorf("authority %d has unexpected name\n  exp %q\n  got %q",
+			i, expName, gotName)
 	}
 }
 
@@ -929,7 +890,7 @@ func checkIP(
 	i int,
 	expType dns.QueryType,
 	expIP string,
-	expNames ...string,
+	expName ...dns.Label,
 ) {
 	additional := additionals[i]
 	if additional.Type != expType {
@@ -945,9 +906,9 @@ func checkIP(
 			i, expIP, gotIP)
 	}
 
-	if !slices.Equal(additional.Names, expNames) {
-		t.Errorf("additional %d has unexpected names\n  exp %q\n  got %q",
-			i, expNames, additional.Names)
+	if !slices.Equal(additional.Name, expName) {
+		t.Errorf("additional %d has unexpected name\n  exp %q\n  got %q",
+			i, expName, additional.Name)
 	}
 }
 
@@ -1048,4 +1009,8 @@ func BenchmarkWriteLargeMessage(b *testing.B) {
 			b.Errorf("unexpected writing error: %s", err)
 		}
 	}
+}
+
+func name(labels ...dns.Label) dns.Name {
+	return dns.Name(labels)
 }

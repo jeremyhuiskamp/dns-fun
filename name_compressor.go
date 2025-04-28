@@ -3,24 +3,24 @@ package dns
 // NameCompressor keeps track of which names have been
 // written at which offsets in a message.
 type NameCompressor struct {
-	root *recordedName
+	root *recordedLabel
 }
 
 func NewNameCompressor() NameCompressor {
 	return NameCompressor{
-		root: &recordedName{},
+		root: &recordedLabel{},
 	}
 }
 
-type recordedName struct {
-	name     string
+type recordedLabel struct {
+	label    Label
 	offset   uint16
-	children []*recordedName
+	children []*recordedLabel
 }
 
-func (rn recordedName) findChild(name string) *recordedName {
+func (rn recordedLabel) findChild(label Label) *recordedLabel {
 	for _, child := range rn.children {
-		if child.name == name {
+		if child.label == label {
 			return child
 		}
 	}
@@ -28,30 +28,30 @@ func (rn recordedName) findChild(name string) *recordedName {
 }
 
 // Record that the given name was written at the given offset.
-func (nc *NameCompressor) Record(offset uint16, names []string) {
-	offsets := matchingOffsets(offset, names)
+func (nc *NameCompressor) Record(offset uint16, name Name) {
+	offsets := matchingOffsets(offset, name)
 
-	addToTree(nc.root, names, offsets)
+	addToTree(nc.root, name, offsets)
 }
 
-func matchingOffsets(offset uint16, names []string) []uint16 {
-	offsets := make([]uint16, len(names))
+func matchingOffsets(offset uint16, name Name) []uint16 {
+	offsets := make([]uint16, len(name))
 	runningOffset := offset
-	for i, name := range names {
+	for i, label := range name {
 		offsets[i] = runningOffset
-		runningOffset += uint16(len(name) + 1)
+		runningOffset += uint16(len(label) + 1)
 	}
 	return offsets
 }
 
-func addToTree(parent *recordedName, names []string, offsets []uint16) {
-	for i := len(names) - 1; i >= 0; i-- {
-		name := names[i]
+func addToTree(parent *recordedLabel, name Name, offsets []uint16) {
+	for i := len(name) - 1; i >= 0; i-- {
+		label := name[i]
 
-		matchingChild := parent.findChild(name)
+		matchingChild := parent.findChild(label)
 		if matchingChild == nil {
-			matchingChild = &recordedName{
-				name:   name,
+			matchingChild = &recordedLabel{
+				label:  label,
 				offset: offsets[i],
 			}
 			parent.children = append(parent.children, matchingChild)
@@ -78,11 +78,11 @@ func addToTree(parent *recordedName, names []string, offsets []uint16) {
 //
 // The offset 0 means that the name has never been written
 // (no names may occur in the first 12 bytes of a message).
-func (nc NameCompressor) Lookup(names []string) (int, uint16) {
+func (nc NameCompressor) Lookup(name Name) (int, uint16) {
 	parent := nc.root
-	for i := len(names) - 1; i >= 0; i-- {
-		name := names[i]
-		child := parent.findChild(name)
+	for i := len(name) - 1; i >= 0; i-- {
+		label := name[i]
+		child := parent.findChild(label)
 		if child == nil {
 
 			// i corresponds to the child, i+1 to the parent

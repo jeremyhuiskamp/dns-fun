@@ -83,7 +83,7 @@ func (m Message) WriteTo(buf []byte) ([]byte, error) {
 	nc := NewNameCompressor()
 
 	for _, question := range m.Questions {
-		buf = appendNames(buf, nc, question.Names)
+		buf = writeName(buf, nc, question.Name)
 
 		buf = be.AppendUint16(buf, uint16(question.Type))
 		buf = be.AppendUint16(buf, uint16(question.Class))
@@ -117,7 +117,7 @@ func (m Message) WriteTo(buf []byte) ([]byte, error) {
 }
 
 func writeResource(buf []byte, nc NameCompressor, res Resource) ([]byte, error) {
-	buf = appendNames(buf, nc, res.Names)
+	buf = writeName(buf, nc, res.Name)
 
 	buf = be.AppendUint16(buf, uint16(res.Type))
 	buf = be.AppendUint16(buf, uint16(res.Class))
@@ -133,13 +133,13 @@ func writeResource(buf []byte, nc NameCompressor, res Resource) ([]byte, error) 
 		}
 		buf = append(buf, ip.To4()...)
 	case NS:
-		names, ok := res.Data.([]string)
+		name, ok := res.Data.(Name)
 		if !ok {
 			return nil, fmt.Errorf("mismatched resource type %s / %T",
 				res.Type, res.Data)
 		}
 		buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
-			return appendNames(buf, nc, names)
+			return writeName(buf, nc, name)
 		})
 	case AAAA:
 		buf = be.AppendUint16(buf, 16)
@@ -149,13 +149,13 @@ func writeResource(buf []byte, nc NameCompressor, res Resource) ([]byte, error) 
 		}
 		buf = append(buf, ip.To16()...)
 	case CNAME:
-		names, ok := res.Data.([]string)
+		name, ok := res.Data.(Name)
 		if !ok {
 			return nil, fmt.Errorf("mismatched resource type %s / %T",
 				res.Type, res.Data)
 		}
 		buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
-			return appendNames(buf, nc, names)
+			return writeName(buf, nc, name)
 		})
 	case MX:
 		mx, ok := res.Data.(MXRecord)
@@ -165,7 +165,7 @@ func writeResource(buf []byte, nc NameCompressor, res Resource) ([]byte, error) 
 		}
 		buf = writeVariableLengthDataToBuf(buf, func(buf []byte) []byte {
 			buf = be.AppendUint16(buf, mx.Preference)
-			return appendNames(buf, nc, mx.MailExchange)
+			return writeName(buf, nc, mx.MailExchange)
 		})
 	default:
 		bytes, ok := res.Data.([]byte)
@@ -192,13 +192,14 @@ func writeVariableLengthDataToBuf(buf []byte, doWrite func(buf []byte) []byte) [
 	return buf
 }
 
-func appendNames(buf []byte, nc NameCompressor, names []string) []byte {
-	skip, offset := nc.Lookup(names)
-	nc.Record(uint16(len(buf)), names)
+func writeName(buf []byte, nc NameCompressor, name Name) []byte {
+	skip, offset := nc.Lookup(name)
+	nc.Record(uint16(len(buf)), name)
 
-	for _, name := range names[:skip] {
-		buf = append(buf, byte(len(name)))
-		buf = append(buf, []byte(name)...)
+	for _, label := range name[:skip] {
+		// TODO: refuse to encode things more than 64 bytes?
+		buf = append(buf, byte(len(label)))
+		buf = append(buf, []byte(label)...)
 	}
 
 	if offset > 0 {
@@ -345,14 +346,17 @@ func (f Flags) ResponseCode() ResponseCode {
 	return ResponseCode(uint16(f) & 0b1111)
 }
 
+type Label string
+type Name []Label
+
 type Question struct {
-	Names []string
+	Name  Name
 	Type  QueryType
 	Class QueryClass
 }
 
 func parseQuestion(buf readBuf) (Question, readBuf, error) {
-	names, buf, err := parseNames(buf)
+	name, buf, err := parseName(buf)
 	if err != nil {
 		return Question{}, buf, err
 	}
@@ -364,7 +368,7 @@ func parseQuestion(buf readBuf) (Question, readBuf, error) {
 	}
 
 	return Question{
-		Names: names,
+		Name:  name,
 		Type:  qType,
 		Class: qClass,
 	}, buf, nil
@@ -413,7 +417,7 @@ const (
 )
 
 type Resource struct {
-	Names []string
+	Name  Name
 	Type  QueryType
 	Class QueryClass
 	TTL   time.Duration
@@ -421,7 +425,7 @@ type Resource struct {
 }
 
 func parseResource(buf readBuf) (Resource, readBuf, error) {
-	names, buf, err := parseNames(buf)
+	name, buf, err := parseName(buf)
 	if err != nil {
 		return Resource{}, buf, err
 	}
@@ -445,7 +449,7 @@ func parseResource(buf readBuf) (Resource, readBuf, error) {
 		resourceData = net.IP(resourceDataBytes)
 
 	} else if qType == NS {
-		resourceData, _, err = parseNames(resourceDataBuf)
+		resourceData, _, err = parseName(resourceDataBuf)
 		if err != nil {
 			return Resource{}, buf, err
 		}
@@ -455,18 +459,18 @@ func parseResource(buf readBuf) (Resource, readBuf, error) {
 
 	} else if qType == MX {
 		preference, _ := resourceDataBuf.Uint16()
-		var names []string
-		names, _, err = parseNames(resourceDataBuf)
+		var name Name
+		name, _, err = parseName(resourceDataBuf)
 		if err != nil {
 			return Resource{}, buf, err
 		}
 		resourceData = MXRecord{
 			Preference:   preference,
-			MailExchange: names,
+			MailExchange: name,
 		}
 
 	} else if qType == CNAME {
-		resourceData, _, err = parseNames(resourceDataBuf)
+		resourceData, _, err = parseName(resourceDataBuf)
 		if err != nil {
 			return Resource{}, buf, err
 		}
@@ -478,7 +482,7 @@ func parseResource(buf readBuf) (Resource, readBuf, error) {
 	}
 
 	return Resource{
-		Names: names,
+		Name:  name,
 		Type:  qType,
 		Class: qClass,
 		TTL:   ttl,
@@ -498,48 +502,48 @@ var ErrInvalidCompression = errors.New("invalid name compression")
 // should be more than is even possible to use.
 const maxCompressionRedirects = 128
 
-func parseNames(buf readBuf) ([]string, readBuf, error) {
-	return parseNamesRec(buf, maxCompressionRedirects)
+func parseName(buf readBuf) (Name, readBuf, error) {
+	return parseNameRec(buf, maxCompressionRedirects)
 }
 
-func parseNamesRec(buf readBuf, remainingCompressionRedirects int) ([]string, readBuf, error) {
+func parseNameRec(buf readBuf, remainingCompressionRedirects int) (Name, readBuf, error) {
 	if remainingCompressionRedirects < 1 {
 		return nil, buf, ErrInvalidCompression
 	}
 
-	var names []string
-	nameLen, err := buf.Byte()
+	var name Name
+	labelLen, err := buf.Byte()
 	if err != nil {
 		return nil, buf, err
 	}
-	for nameLen > 0 {
-		if isCompression(nameLen) {
+	for labelLen > 0 {
+		if isCompression(labelLen) {
 			buf.BackOne()
 			newOffset, err := buf.Uint16()
 			if err != nil {
 				return nil, buf, err
 			}
 			newOffset = withoutCompressionFlag(newOffset)
-			pointerNames, _, err := parseNamesRec(
+			pointerLabels, _, err := parseNameRec(
 				buf.WithPos(int(newOffset)),
 				remainingCompressionRedirects-1,
 			)
-			return append(names, pointerNames...), buf, err
+			return append(name, pointerLabels...), buf, err
 		}
 
 		// TODO: punycode parsing?
-		name, err := buf.String(int(nameLen))
+		label, err := buf.String(int(labelLen))
 		if err != nil {
 			return nil, buf, err
 		}
-		names = append(names, name)
-		nameLen, err = buf.Byte()
+		name = append(name, Label(label))
+		labelLen, err = buf.Byte()
 		if err != nil {
 			return nil, buf, err
 		}
 	}
 
-	return names, buf, nil
+	return name, buf, nil
 }
 
 const compressionMask8 = 0b1100_0000
@@ -559,7 +563,7 @@ func withCompressionFlag(offset uint16) uint16 {
 
 type MXRecord struct {
 	Preference   uint16
-	MailExchange []string
+	MailExchange Name
 }
 
 type Integer interface {

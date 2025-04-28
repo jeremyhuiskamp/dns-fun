@@ -47,7 +47,7 @@ func (s *Server) Listen() error {
 		rsp := MakeResponse(msg)
 		for _, question := range msg.Questions {
 			answer := Resource{
-				Names: question.Names,
+				Name:  question.Name,
 				Class: question.Class,
 				Type:  question.Type,
 				TTL:   120 * time.Second,
@@ -58,11 +58,11 @@ func (s *Server) Listen() error {
 			} else if question.Type == MX {
 				answer.Data = MXRecord{
 					Preference: 10,
-					MailExchange: []string{
+					MailExchange: Name([]Label{
 						"smtp",
 						"test",
 						"com",
-					},
+					}),
 				}
 				rsp.Answers = append(rsp.Answers, answer)
 			}
