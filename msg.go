@@ -202,7 +202,7 @@ func appendNames(buf []byte, nc NameCompressor, names []string) []byte {
 	}
 
 	if offset > 0 {
-		buf = be.AppendUint16(buf, 0b1100_0000_0000_0000|offset)
+		buf = be.AppendUint16(buf, withCompressionFlag(offset))
 	} else {
 		buf = append(buf, 0)
 	}
@@ -513,14 +513,13 @@ func parseNamesRec(buf readBuf, remainingCompressionRedirects int) ([]string, re
 		return nil, buf, err
 	}
 	for nameLen > 0 {
-		compressionMask := byte(0b1100_0000)
-		if nameLen&compressionMask == compressionMask {
+		if isCompression(nameLen) {
 			buf.BackOne()
 			newOffset, err := buf.Uint16()
 			if err != nil {
 				return nil, buf, err
 			}
-			newOffset &= ^(uint16(compressionMask) << 8)
+			newOffset = withoutCompressionFlag(newOffset)
 			pointerNames, _, err := parseNamesRec(
 				buf.WithPos(int(newOffset)),
 				remainingCompressionRedirects-1,
@@ -541,6 +540,21 @@ func parseNamesRec(buf readBuf, remainingCompressionRedirects int) ([]string, re
 	}
 
 	return names, buf, nil
+}
+
+const compressionMask8 = 0b1100_0000
+const compressionMask16 = uint16(compressionMask8) << 8
+
+func isCompression(len uint8) bool {
+	return len&compressionMask8 == compressionMask8
+}
+
+func withoutCompressionFlag(offset uint16) uint16 {
+	return offset & ^compressionMask16
+}
+
+func withCompressionFlag(offset uint16) uint16 {
+	return offset | compressionMask16
 }
 
 type MXRecord struct {
