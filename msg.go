@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// TODO: combine buf/offset into a type
+// - there's too much keeping these together only by convention
+
 func ParseDNSMessage(buf []byte) (DNSMessage, error) {
 	if len(buf) < 12 {
 		return DNSMessage{}, io.ErrShortBuffer
@@ -497,26 +500,55 @@ func parseResource(buf []byte, offset int) (Resource, int, error) {
 	}, offset, nil
 }
 
+var ErrInvalidCompression = errors.New("invalid name compression")
+
+// maxCompressionRedirects is the maximum number of compression redirects
+// we support in a single name.
+//
+// This is necessary, eg, to handle malicious messages that have reference
+// loops that would otherwise never end.
+//
+// The maximum length for a name is 255 bytes, including dots, so 128
+// should be more than is even possible to use.
+const maxCompressionRedirects = 128
+
 func parseNames(buf []byte, offset int) ([]string, int, error) {
+	return parseNamesRec(buf, offset, maxCompressionRedirects)
+}
+
+func parseNamesRec(
+	buf []byte,
+	offset int,
+	remainingCompressionRedirects int,
+) ([]string, int, error) {
+	if remainingCompressionRedirects < 1 {
+		return nil, 0, ErrInvalidCompression
+	}
 	if noSpace(buf, offset, 1) {
 		return nil, 0, io.ErrShortBuffer
 	}
 
 	var names []string
-	nameLen := uint(buf[offset])
+	nameLen := buf[offset]
 	for nameLen > 0 {
-		if nameLen&0b1100_0000 == 0b1100_0000 {
+		compressionMask := byte(0b1100_0000)
+		if nameLen&compressionMask == compressionMask {
 			if noSpace(buf, offset, 2) {
 				return nil, 0, io.ErrShortBuffer
 			}
-			newOffset := be.Uint16(buf[offset:])
+			newOffset := be.Uint16(buf[offset:]) & ^(uint16(compressionMask) << 8)
 			offset += 2
-			newOffset &= 0b0011_1111_1111_1111
-			pointerNames, _, err := parseNames(buf, int(newOffset))
+			pointerNames, _, err := parseNamesRec(
+				buf,
+				int(newOffset),
+				remainingCompressionRedirects-1,
+			)
 			return append(names, pointerNames...), offset, err
 		}
 
 		offset++
+		// +1 accounts for the next nameLen value written after the
+		// current name chunk
 		if noSpace(buf, offset, int(nameLen)+1) {
 			return nil, 0, io.ErrShortBuffer
 		}
@@ -525,7 +557,7 @@ func parseNames(buf []byte, offset int) ([]string, int, error) {
 		name := string(buf[offset:][:nameLen])
 		names = append(names, name)
 		offset += int(nameLen)
-		nameLen = uint(buf[offset])
+		nameLen = buf[offset]
 	}
 
 	// skip over 0

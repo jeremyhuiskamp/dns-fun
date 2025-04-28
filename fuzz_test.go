@@ -15,8 +15,17 @@ func FuzzParseDNSMessage(f *testing.F) {
 	f.Add(cnameWithMultipleAnswers)
 	f.Fuzz(func(t *testing.T, buf []byte) {
 		_, err := dns.ParseDNSMessage(buf)
-		if err != nil && err != io.ErrShortBuffer {
+		if !isExpectedParseError(err) {
 			t.Errorf("unexpected error while parsing: %s", err)
 		}
+
+		// TODO: consider writing the message too
+		// Perhaps some invalid input could mess up the writer?
 	})
+}
+
+func isExpectedParseError(err error) bool {
+	return err == nil ||
+		err == io.ErrShortBuffer ||
+		err == dns.ErrInvalidCompression
 }

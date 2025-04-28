@@ -3,6 +3,7 @@ package dns_test
 import (
 	"dns"
 	"fmt"
+	"io"
 	"net"
 	"reflect"
 	"slices"
@@ -956,4 +957,49 @@ func TestRoundTripRootAResponse(t *testing.T) {
 
 func TestCompressionRootAResponse(t *testing.T) {
 	reserialisingShouldntExpand(t, googleRootAResponse)
+}
+
+var compressionWithLoop = []byte{
+	0x67, 0x6c, // ID
+	0x01, 0x00, // flags
+	0x00, 0x01, // # questions
+	0x00, 0x00, // # answers
+	0x00, 0x00, // # authority RRs
+	0x00, 0x00, // # additional RRs
+	// question 1
+	0xc0, 0x0c, // point to location 12, this very location!
+}
+
+func TestCompressionWithLoop(t *testing.T) {
+	_, err := dns.ParseDNSMessage(compressionWithLoop)
+	if err != dns.ErrInvalidCompression {
+		t.Errorf("expected error for invalid compression, but got %s", err)
+	}
+}
+
+func TestShortBufGoogleRootAResponse(t *testing.T) {
+	checkShortBufProducesProperError(t, googleRootAResponse)
+}
+
+// checkShortBufProducesProperError parses every possible truncation of the msg
+// and expects them all to return ErrShortBuf
+func checkShortBufProducesProperError(t *testing.T, msg []byte) {
+	_, err := dns.ParseDNSMessage(msg)
+	if err != nil {
+		t.Errorf(
+			"expected no error when parsing entire message, but got %s",
+			err,
+		)
+	}
+
+	for trim := 1; trim <= len(msg); trim++ {
+		shortMsg := msg[:len(msg)-trim]
+		_, err := dns.ParseDNSMessage(shortMsg)
+		if err != io.ErrShortBuffer {
+			t.Errorf(
+				"expected short buffer error after trimming %d bytes from message, but got %s",
+				trim, err,
+			)
+		}
+	}
 }
