@@ -9,40 +9,43 @@ import (
 	"time"
 )
 
-// TODO: combine buf/offset into a type
-// - there's too much keeping these together only by convention
+func ParseDNSMessage(b []byte) (DNSMessage, error) {
+	buf := readBuf{b, 0}
 
-func ParseDNSMessage(buf []byte) (DNSMessage, error) {
-	if len(buf) < 12 {
+	id, _ := buf.Uint16()
+	flags, _ := as[Flags](buf.Uint16())
+	numQuestions, _ := buf.Uint16()
+	numAnswers, _ := buf.Uint16()
+	numAuthorities, _ := buf.Uint16()
+	numAdditional, err := buf.Uint16()
+
+	if err != nil {
 		return DNSMessage{}, io.ErrShortBuffer
 	}
 
-	questions, offset, err := parseQuestions(buf)
+	questions, buf, err := parseQuestions(buf, numQuestions)
 	if err != nil {
 		return DNSMessage{}, err
 	}
 
-	numAnswers := be.Uint16(buf[6:])
-	answers, offset, err := parseResources(buf, offset, numAnswers)
+	answers, buf, err := parseResources(buf, numAnswers)
 	if err != nil {
 		return DNSMessage{}, err
 	}
 
-	numAuthorities := be.Uint16(buf[8:])
-	authorities, offset, err := parseResources(buf, offset, numAuthorities)
+	authorities, buf, err := parseResources(buf, numAuthorities)
 	if err != nil {
 		return DNSMessage{}, err
 	}
 
-	numAdditional := be.Uint16(buf[10:])
-	additional, _, err := parseResources(buf, offset, numAdditional)
+	additional, buf, err := parseResources(buf, numAdditional)
 	if err != nil {
 		return DNSMessage{}, err
 	}
 
 	return DNSMessage{
-		ID:          be.Uint16(buf),
-		Flags:       Flags(be.Uint16(buf[2:])),
+		ID:          id,
+		Flags:       flags,
 		Questions:   questions,
 		Answers:     answers,
 		Authorities: authorities,
@@ -207,42 +210,41 @@ func appendNames(buf []byte, nc NameCompressor, names []string) []byte {
 	return buf
 }
 
-func parseQuestions(buf []byte) ([]Question, int, error) {
-	numQuestions := be.Uint16(buf[4:])
+func parseQuestions(buf readBuf, numQuestions uint16) ([]Question, readBuf, error) {
 	if numQuestions == 0 {
-		return nil, 0, nil
+		return nil, buf, nil
 	}
 
-	offset := 12
 	questions := make([]Question, numQuestions)
 	for i := range numQuestions {
 		var question Question
 		var err error
-		question, offset, err = parseQuestion(buf, offset)
+		question, buf, err = parseQuestion(buf)
 		if err != nil {
-			return nil, 0, err
+			return nil, buf, err
 		}
 		questions[i] = question
 	}
 
-	return questions, offset, nil
+	return questions, buf, nil
 }
 
-func parseResources(buf []byte, offset int, count uint16) ([]Resource, int, error) {
+func parseResources(buf readBuf, count uint16) ([]Resource, readBuf, error) {
 	if count == 0 {
-		return nil, offset, nil
+		return nil, buf, nil
 	}
+
 	resources := make([]Resource, count)
 	for i := range count {
 		var resource Resource
 		var err error
-		resource, offset, err = parseResource(buf, offset)
+		resource, buf, err = parseResource(buf)
 		if err != nil {
-			return nil, 0, err
+			return nil, buf, err
 		}
 		resources[i] = resource
 	}
-	return resources, offset, nil
+	return resources, buf, nil
 }
 
 func (m DNSMessage) String() string {
@@ -349,30 +351,23 @@ type Question struct {
 	Class QueryClass
 }
 
-func parseQuestion(buf []byte, offset int) (Question, int, error) {
-	if noSpace(buf, offset, 1) {
-		return Question{}, 0, io.ErrShortBuffer
-	}
-
-	names, offset, err := parseNames(buf, offset)
+func parseQuestion(buf readBuf) (Question, readBuf, error) {
+	names, buf, err := parseNames(buf)
 	if err != nil {
-		return Question{}, 0, err
+		return Question{}, buf, err
 	}
 
-	if noSpace(buf, offset, 4) {
-		return Question{}, 0, io.ErrShortBuffer
+	qType, _ := as[QueryType](buf.Uint16())
+	qClass, err := as[QueryClass](buf.Uint16())
+	if err != nil {
+		return Question{}, buf, err
 	}
-
-	qType := QueryType(be.Uint16(buf[offset:]))
-	offset += 2
-	qClass := QueryClass(be.Uint16(buf[offset:]))
-	offset += 2
 
 	return Question{
 		Names: names,
 		Type:  qType,
 		Class: qClass,
-	}, offset, nil
+	}, buf, nil
 }
 
 //go:generate stringer -type=QueryType
@@ -425,71 +420,62 @@ type Resource struct {
 	Data  any
 }
 
-func parseResource(buf []byte, offset int) (Resource, int, error) {
-	if noSpace(buf, offset, 2) {
-		return Resource{}, 0, io.ErrShortBuffer
-	}
-
-	names, offset, err := parseNames(buf, offset)
+func parseResource(buf readBuf) (Resource, readBuf, error) {
+	names, buf, err := parseNames(buf)
 	if err != nil {
-		return Resource{}, 0, err
+		return Resource{}, buf, err
 	}
 
-	if noSpace(buf, offset, 10) {
-		return Resource{}, 0, io.ErrShortBuffer
+	qType, _ := as[QueryType](buf.Uint16())
+	qClass, _ := as[QueryClass](buf.Uint16())
+
+	ttl, _ := as[time.Duration](buf.Uint32())
+	ttl = time.Second * ttl
+
+	resourceDataLen, _ := buf.Uint16()
+	resourceDataBuf := buf // copy to preserve position
+	resourceDataBytes, err := buf.Slice(int(resourceDataLen))
+
+	if err != nil {
+		return Resource{}, buf, err
 	}
 
-	qType := QueryType(be.Uint16(buf[offset:]))
-	offset += 2
-	qClass := QueryClass(be.Uint16(buf[offset:]))
-	offset += 2
-
-	ttl := time.Second * time.Duration(be.Uint32(buf[offset:]))
-	offset += 4
-
-	resourceDataLen := be.Uint16(buf[offset:])
-	offset += 2
-
-	if noSpace(buf, offset, int(resourceDataLen)) {
-		return Resource{}, 0, io.ErrShortBuffer
-	}
-
-	resourceDataBytes := buf[offset:][:resourceDataLen]
 	var resourceData any
 	if qType == A && resourceDataLen == 4 {
 		resourceData = net.IP(resourceDataBytes)
+
 	} else if qType == NS {
-		resourceData, _, err = parseNames(buf, offset)
+		resourceData, _, err = parseNames(resourceDataBuf)
 		if err != nil {
-			return Resource{}, 0, err
+			return Resource{}, buf, err
 		}
+
 	} else if qType == AAAA && resourceDataLen == 16 {
 		resourceData = net.IP(resourceDataBytes)
+
 	} else if qType == MX {
-		if len(resourceDataBytes) < 2 {
-			return Resource{}, 0, io.ErrShortBuffer
-		}
-		preference := be.Uint16(resourceDataBytes)
+		preference, _ := resourceDataBuf.Uint16()
 		var names []string
-		names, _, err = parseNames(buf, offset+2)
+		names, _, err = parseNames(resourceDataBuf)
 		if err != nil {
-			return Resource{}, 0, err
+			return Resource{}, buf, err
 		}
 		resourceData = MXRecord{
 			Preference:   preference,
 			MailExchange: names,
 		}
+
 	} else if qType == CNAME {
-		resourceData, _, err = parseNames(buf, offset)
+		resourceData, _, err = parseNames(resourceDataBuf)
 		if err != nil {
-			return Resource{}, 0, err
+			return Resource{}, buf, err
 		}
+
 	} else {
 		// fallback on raw bytes
 		// TODO: other types...
 		resourceData = resourceDataBytes
 	}
-	offset += int(resourceDataLen)
 
 	return Resource{
 		Names: names,
@@ -497,7 +483,7 @@ func parseResource(buf []byte, offset int) (Resource, int, error) {
 		Class: qClass,
 		TTL:   ttl,
 		Data:  resourceData,
-	}, offset, nil
+	}, buf, nil
 }
 
 var ErrInvalidCompression = errors.New("invalid name compression")
@@ -512,60 +498,49 @@ var ErrInvalidCompression = errors.New("invalid name compression")
 // should be more than is even possible to use.
 const maxCompressionRedirects = 128
 
-func parseNames(buf []byte, offset int) ([]string, int, error) {
-	return parseNamesRec(buf, offset, maxCompressionRedirects)
+func parseNames(buf readBuf) ([]string, readBuf, error) {
+	return parseNamesRec(buf, maxCompressionRedirects)
 }
 
-func parseNamesRec(
-	buf []byte,
-	offset int,
-	remainingCompressionRedirects int,
-) ([]string, int, error) {
+func parseNamesRec(buf readBuf, remainingCompressionRedirects int) ([]string, readBuf, error) {
 	if remainingCompressionRedirects < 1 {
-		return nil, 0, ErrInvalidCompression
-	}
-	if noSpace(buf, offset, 1) {
-		return nil, 0, io.ErrShortBuffer
+		return nil, buf, ErrInvalidCompression
 	}
 
 	var names []string
-	nameLen := buf[offset]
+	nameLen, err := buf.Byte()
+	if err != nil {
+		return nil, buf, err
+	}
 	for nameLen > 0 {
 		compressionMask := byte(0b1100_0000)
 		if nameLen&compressionMask == compressionMask {
-			if noSpace(buf, offset, 2) {
-				return nil, 0, io.ErrShortBuffer
+			buf.BackOne()
+			newOffset, err := buf.Uint16()
+			if err != nil {
+				return nil, buf, err
 			}
-			newOffset := be.Uint16(buf[offset:]) & ^(uint16(compressionMask) << 8)
-			offset += 2
+			newOffset &= ^(uint16(compressionMask) << 8)
 			pointerNames, _, err := parseNamesRec(
-				buf,
-				int(newOffset),
+				buf.WithPos(int(newOffset)),
 				remainingCompressionRedirects-1,
 			)
-			return append(names, pointerNames...), offset, err
-		}
-
-		offset++
-		// +1 accounts for the next nameLen value written after the
-		// current name chunk
-		if noSpace(buf, offset, int(nameLen)+1) {
-			return nil, 0, io.ErrShortBuffer
+			return append(names, pointerNames...), buf, err
 		}
 
 		// TODO: punycode parsing?
-		name := string(buf[offset:][:nameLen])
+		name, err := buf.String(int(nameLen))
+		if err != nil {
+			return nil, buf, err
+		}
 		names = append(names, name)
-		offset += int(nameLen)
-		nameLen = buf[offset]
+		nameLen, err = buf.Byte()
+		if err != nil {
+			return nil, buf, err
+		}
 	}
 
-	// skip over 0
-	// Don't do this directly after reading nameLen because
-	// we might need to re-read it as part of a pointer.
-	offset++
-
-	return names, offset, nil
+	return names, buf, nil
 }
 
 type MXRecord struct {
@@ -573,8 +548,17 @@ type MXRecord struct {
 	MailExchange []string
 }
 
-func noSpace(buf []byte, offset int, required int) bool {
-	return len(buf) < offset+required
+type Integer interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
+}
+
+// as allows simple numeric conversions, even in the presence
+// of an error.  This simplifies, for example, converting the
+// result of a function call without needing to assign a temporary
+// variable.
+func as[Out, In Integer](in In, err error) (Out, error) {
+	return Out(in), err
 }
 
 var be = binary.BigEndian
