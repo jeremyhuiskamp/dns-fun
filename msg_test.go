@@ -1003,3 +1003,49 @@ func checkShortBufProducesProperError(t *testing.T, msg []byte) {
 		}
 	}
 }
+
+func BenchmarkParseLargeMessage(b *testing.B) {
+	for b.Loop() {
+		_, err := dns.ParseDNSMessage(googleRootAResponse)
+		if err != nil {
+			b.Errorf("unexpected parsing error: %s", err)
+		}
+	}
+}
+
+func BenchmarkParseSmallMessage(b *testing.B) {
+	for b.Loop() {
+		_, err := dns.ParseDNSMessage(googleQuery)
+		if err != nil {
+			b.Errorf("unexpected parsing error: %s", err)
+		}
+	}
+}
+
+func BenchmarkWriteSmallMessage(b *testing.B) {
+	msg, err := dns.ParseDNSMessage(googleQuery)
+	if err != nil {
+		b.Errorf("unexpected parsing error: %s", err)
+	}
+	buf := make([]byte, 0, 1024)
+	for b.Loop() {
+		_, err := msg.WriteTo(buf)
+		if err != nil {
+			b.Errorf("unexpected writing error: %s", err)
+		}
+	}
+}
+
+func BenchmarkWriteLargeMessage(b *testing.B) {
+	msg, err := dns.ParseDNSMessage(googleRootAResponse)
+	if err != nil {
+		b.Errorf("unexpected parsing error: %s", err)
+	}
+	buf := make([]byte, 0, 1024)
+	for b.Loop() {
+		_, err := msg.WriteTo(buf)
+		if err != nil {
+			b.Errorf("unexpected writing error: %s", err)
+		}
+	}
+}
