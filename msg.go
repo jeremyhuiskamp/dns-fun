@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func ParseDNSMessage(b []byte) (DNSMessage, error) {
+func ParseMessage(b []byte) (Message, error) {
 	buf := readBuf{b, 0}
 
 	id, _ := buf.Uint16()
@@ -20,30 +20,30 @@ func ParseDNSMessage(b []byte) (DNSMessage, error) {
 	numAdditional, err := buf.Uint16()
 
 	if err != nil {
-		return DNSMessage{}, io.ErrShortBuffer
+		return Message{}, io.ErrShortBuffer
 	}
 
 	questions, buf, err := parseQuestions(buf, numQuestions)
 	if err != nil {
-		return DNSMessage{}, err
+		return Message{}, err
 	}
 
 	answers, buf, err := parseResources(buf, numAnswers)
 	if err != nil {
-		return DNSMessage{}, err
+		return Message{}, err
 	}
 
 	authorities, buf, err := parseResources(buf, numAuthorities)
 	if err != nil {
-		return DNSMessage{}, err
+		return Message{}, err
 	}
 
 	additional, buf, err := parseResources(buf, numAdditional)
 	if err != nil {
-		return DNSMessage{}, err
+		return Message{}, err
 	}
 
-	return DNSMessage{
+	return Message{
 		ID:          id,
 		Flags:       flags,
 		Questions:   questions,
@@ -53,17 +53,17 @@ func ParseDNSMessage(b []byte) (DNSMessage, error) {
 	}, nil
 }
 
-func MakeResponse(qry DNSMessage) DNSMessage {
+func MakeResponse(qry Message) Message {
 	// TODO: we should probably set a few more flags explicitly
 	// eg, ResponseCode, etc
-	return DNSMessage{
+	return Message{
 		ID:        qry.ID,
 		Flags:     qry.Flags.WithType(Response),
 		Questions: qry.Questions,
 	}
 }
 
-type DNSMessage struct {
+type Message struct {
 	ID          uint16
 	Flags       Flags
 	Questions   []Question
@@ -72,7 +72,7 @@ type DNSMessage struct {
 	Additional  []Resource
 }
 
-func (m DNSMessage) WriteTo(buf []byte) ([]byte, error) {
+func (m Message) WriteTo(buf []byte) ([]byte, error) {
 	buf = be.AppendUint16(buf, m.ID)
 	buf = be.AppendUint16(buf, uint16(m.Flags))
 	buf = be.AppendUint16(buf, uint16(len(m.Questions)))
@@ -247,7 +247,7 @@ func parseResources(buf readBuf, count uint16) ([]Resource, readBuf, error) {
 	return resources, buf, nil
 }
 
-func (m DNSMessage) String() string {
+func (m Message) String() string {
 	return fmt.Sprintf("DNS Message: %d, %s, %s, %t",
 		m.ID,
 		m.Flags.Type(),
@@ -256,12 +256,12 @@ func (m DNSMessage) String() string {
 	)
 }
 
-//go:generate stringer -type=DNSType
-type DNSType byte
+//go:generate stringer -type=Type
+type Type byte
 
 const (
-	Query    DNSType = 0
-	Response DNSType = 1
+	Query    Type = 0
+	Response Type = 1
 )
 
 //go:generate stringer -type=OpCode
@@ -302,11 +302,11 @@ func (f Flags) withBoolInBit(bit uint8, val bool) Flags {
 	}
 }
 
-func (f Flags) Type() DNSType {
-	return DNSType(uint16(f) >> 15)
+func (f Flags) Type() Type {
+	return Type(uint16(f) >> 15)
 }
 
-func (f Flags) WithType(t DNSType) Flags {
+func (f Flags) WithType(t Type) Flags {
 	var mask uint16 = 1 << 15
 	var val = uint16(t) << 15
 	return Flags(uint16(f)&^mask | val)

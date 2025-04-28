@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func FuzzParseDNSMessage(f *testing.F) {
+func FuzzParseMessage(f *testing.F) {
 	f.Add(googleQuery)
 	f.Add(googleResponse)
 	f.Add(googleAAAAResponse)
@@ -14,7 +14,7 @@ func FuzzParseDNSMessage(f *testing.F) {
 	f.Add(googleRootAResponse)
 	f.Add(cnameWithMultipleAnswers)
 	f.Fuzz(func(t *testing.T, buf []byte) {
-		_, err := dns.ParseDNSMessage(buf)
+		_, err := dns.ParseMessage(buf)
 		if !isExpectedParseError(err) {
 			t.Errorf("unexpected error while parsing: %s", err)
 		}

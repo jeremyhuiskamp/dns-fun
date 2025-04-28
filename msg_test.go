@@ -32,7 +32,7 @@ var googleQuery = []byte{
 // values.
 
 func TestParseQuery(t *testing.T) {
-	q, err := dns.ParseDNSMessage(googleQuery)
+	q, err := dns.ParseMessage(googleQuery)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
@@ -110,15 +110,15 @@ var googleResponse = []byte{
 }
 
 func TestParseResponse(t *testing.T) {
-	q, err := dns.ParseDNSMessage(googleResponse)
+	rsp, err := dns.ParseMessage(googleResponse)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
-	if got := q.ID; got != 0x1131 {
-		t.Errorf("expected id 0x1131, got %x", q.ID)
+	if got := rsp.ID; got != 0x1131 {
+		t.Errorf("expected id 0x1131, got %x", rsp.ID)
 	}
 
-	flags := q.Flags
+	flags := rsp.Flags
 	if got := flags.Type(); got != dns.Response {
 		t.Errorf("expected type Query, got %s", got)
 	}
@@ -141,7 +141,7 @@ func TestParseResponse(t *testing.T) {
 		t.Errorf("expected no error, got %s", got)
 	}
 
-	questions := q.Questions
+	questions := rsp.Questions
 	if count := len(questions); count != 1 {
 		t.Errorf("expected 1 question, got %d", count)
 	} else {
@@ -162,7 +162,7 @@ func TestParseResponse(t *testing.T) {
 		}
 	}
 
-	answers := q.Answers
+	answers := rsp.Answers
 	if count := len(answers); count != 1 {
 		t.Errorf("expected 1 answer, got %d", count)
 	} else {
@@ -252,12 +252,12 @@ var cnameWithMultipleAnswers = []byte{
 }
 
 func TestParseResponseWithCNAME(t *testing.T) {
-	q, err := dns.ParseDNSMessage(cnameWithMultipleAnswers)
+	rsp, err := dns.ParseMessage(cnameWithMultipleAnswers)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
 
-	if count := len(q.Answers); count != 5 {
+	if count := len(rsp.Answers); count != 5 {
 		t.Fatalf("expected 5 answers, got %d", count)
 	}
 
@@ -308,7 +308,7 @@ func TestParseResponseWithCNAME(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("answer %d", i), func(t *testing.T) {
-			got := q.Answers[i]
+			got := rsp.Answers[i]
 			checkNameAndData(t, exp, got)
 		})
 	}
@@ -346,25 +346,25 @@ func TestRoundTripResponse(t *testing.T) {
 }
 
 func roundTripMessage(t *testing.T, bytes []byte) {
-	q, err := dns.ParseDNSMessage(bytes)
+	msg, err := dns.ParseMessage(bytes)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
 
 	var buf []byte
-	buf, err = q.WriteTo(buf)
+	buf, err = msg.WriteTo(buf)
 	if err != nil {
 		t.Fatalf("unexpected error writing: %s", err)
 	}
 
-	q2, err := dns.ParseDNSMessage(buf)
+	q2, err := dns.ParseMessage(buf)
 	if err != nil {
 		t.Fatalf("unexpected error re-parsing: %s", err)
 	}
 
-	if !reflect.DeepEqual(q, q2) {
+	if !reflect.DeepEqual(msg, q2) {
 		t.Errorf("re-parsed message is not same as original\n  exp %#v\n  got %#v",
-			q, q2)
+			msg, q2)
 	}
 }
 
@@ -381,13 +381,13 @@ func TestCompressionResponseWithCNAME(t *testing.T) {
 }
 
 func reserialisingShouldntExpand(t *testing.T, original []byte) {
-	q, err := dns.ParseDNSMessage(original)
+	msg, err := dns.ParseMessage(original)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
 
 	var reencoded []byte
-	reencoded, err = q.WriteTo(reencoded)
+	reencoded, err = msg.WriteTo(reencoded)
 	if err != nil {
 		t.Fatalf("unexpected error writing: %s", err)
 	}
@@ -399,7 +399,7 @@ func reserialisingShouldntExpand(t *testing.T, original []byte) {
 }
 
 func TestMakeResponse(t *testing.T) {
-	q, err := dns.ParseDNSMessage(googleQuery)
+	q, err := dns.ParseMessage(googleQuery)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
@@ -456,12 +456,12 @@ var googleAAAAResponse = []byte{
 }
 
 func TestParseAAAAResponse(t *testing.T) {
-	q, err := dns.ParseDNSMessage(googleAAAAResponse)
+	rsp, err := dns.ParseMessage(googleAAAAResponse)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
 
-	questions := q.Questions
+	questions := rsp.Questions
 	if count := len(questions); count != 1 {
 		t.Errorf("expected 1 question, got %d", count)
 	} else {
@@ -482,7 +482,7 @@ func TestParseAAAAResponse(t *testing.T) {
 		}
 	}
 
-	answers := q.Answers
+	answers := rsp.Answers
 	if count := len(answers); count != 1 {
 		t.Errorf("expected 1 answer, got %d", count)
 	} else {
@@ -550,12 +550,12 @@ var googleMXResponse = []byte{
 }
 
 func TestParseMXResponse(t *testing.T) {
-	q, err := dns.ParseDNSMessage(googleMXResponse)
+	rsp, err := dns.ParseMessage(googleMXResponse)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
 
-	questions := q.Questions
+	questions := rsp.Questions
 	if count := len(questions); count != 1 {
 		t.Errorf("expected 1 question, got %d", count)
 	} else {
@@ -576,7 +576,7 @@ func TestParseMXResponse(t *testing.T) {
 		}
 	}
 
-	answers := q.Answers
+	answers := rsp.Answers
 	if count := len(answers); count != 1 {
 		t.Errorf("expected 1 answer, got %d", count)
 	} else {
@@ -852,61 +852,61 @@ var googleRootAResponse = []byte{
 }
 
 func TestParseGoogleRootAResponses(t *testing.T) {
-	q, err := dns.ParseDNSMessage(googleRootAResponse)
+	rsp, err := dns.ParseMessage(googleRootAResponse)
 	if err != nil {
 		t.Fatalf("unexpected error parsing: %s", err)
 	}
 
-	if len(q.Answers) != 0 {
-		t.Errorf("expected 0 answers, got %d", len(q.Answers))
+	if len(rsp.Answers) != 0 {
+		t.Errorf("expected 0 answers, got %d", len(rsp.Answers))
 	}
 
-	if len(q.Authorities) != 13 {
-		t.Errorf("expected 13 authorities, got %d", len(q.Authorities))
+	if len(rsp.Authorities) != 13 {
+		t.Errorf("expected 13 authorities, got %d", len(rsp.Authorities))
 	}
-	checkNS(t, q.Authorities, 0, "l", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 1, "j", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 2, "h", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 3, "d", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 4, "b", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 5, "f", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 6, "k", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 7, "m", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 8, "i", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 9, "g", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 10, "a", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 11, "c", "gtld-servers", "net")
-	checkNS(t, q.Authorities, 12, "e", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 0, "l", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 1, "j", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 2, "h", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 3, "d", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 4, "b", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 5, "f", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 6, "k", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 7, "m", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 8, "i", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 9, "g", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 10, "a", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 11, "c", "gtld-servers", "net")
+	checkNS(t, rsp.Authorities, 12, "e", "gtld-servers", "net")
 
-	if len(q.Additional) != 26 {
-		t.Errorf("expected 26 additional records, got %d", len(q.Additional))
+	if len(rsp.Additional) != 26 {
+		t.Errorf("expected 26 additional records, got %d", len(rsp.Additional))
 	}
-	checkIP(t, q.Additional, 0, dns.A, "192.41.162.30", "l", "gtld-servers", "net")
-	checkIP(t, q.Additional, 1, dns.AAAA, "2001:500:d937::30", "l", "gtld-servers", "net")
-	checkIP(t, q.Additional, 2, dns.A, "192.48.79.30", "j", "gtld-servers", "net")
-	checkIP(t, q.Additional, 3, dns.AAAA, "2001:502:7094::30", "j", "gtld-servers", "net")
-	checkIP(t, q.Additional, 4, dns.A, "192.54.112.30", "h", "gtld-servers", "net")
-	checkIP(t, q.Additional, 5, dns.AAAA, "2001:502:8cc::30", "h", "gtld-servers", "net")
-	checkIP(t, q.Additional, 6, dns.A, "192.31.80.30", "d", "gtld-servers", "net")
-	checkIP(t, q.Additional, 7, dns.AAAA, "2001:500:856e::30", "d", "gtld-servers", "net")
-	checkIP(t, q.Additional, 8, dns.A, "192.33.14.30", "b", "gtld-servers", "net")
-	checkIP(t, q.Additional, 9, dns.AAAA, "2001:503:231d::2:30", "b", "gtld-servers", "net")
-	checkIP(t, q.Additional, 10, dns.A, "192.35.51.30", "f", "gtld-servers", "net")
-	checkIP(t, q.Additional, 11, dns.AAAA, "2001:503:d414::30", "f", "gtld-servers", "net")
-	checkIP(t, q.Additional, 12, dns.A, "192.52.178.30", "k", "gtld-servers", "net")
-	checkIP(t, q.Additional, 13, dns.AAAA, "2001:503:d2d::30", "k", "gtld-servers", "net")
-	checkIP(t, q.Additional, 14, dns.A, "192.55.83.30", "m", "gtld-servers", "net")
-	checkIP(t, q.Additional, 15, dns.AAAA, "2001:501:b1f9::30", "m", "gtld-servers", "net")
-	checkIP(t, q.Additional, 16, dns.A, "192.43.172.30", "i", "gtld-servers", "net")
-	checkIP(t, q.Additional, 17, dns.AAAA, "2001:503:39c1::30", "i", "gtld-servers", "net")
-	checkIP(t, q.Additional, 18, dns.A, "192.42.93.30", "g", "gtld-servers", "net")
-	checkIP(t, q.Additional, 19, dns.AAAA, "2001:503:eea3::30", "g", "gtld-servers", "net")
-	checkIP(t, q.Additional, 20, dns.A, "192.5.6.30", "a", "gtld-servers", "net")
-	checkIP(t, q.Additional, 21, dns.AAAA, "2001:503:a83e::2:30", "a", "gtld-servers", "net")
-	checkIP(t, q.Additional, 22, dns.A, "192.26.92.30", "c", "gtld-servers", "net")
-	checkIP(t, q.Additional, 23, dns.AAAA, "2001:503:83eb::30", "c", "gtld-servers", "net")
-	checkIP(t, q.Additional, 24, dns.A, "192.12.94.30", "e", "gtld-servers", "net")
-	checkIP(t, q.Additional, 25, dns.AAAA, "2001:502:1ca1::30", "e", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 0, dns.A, "192.41.162.30", "l", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 1, dns.AAAA, "2001:500:d937::30", "l", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 2, dns.A, "192.48.79.30", "j", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 3, dns.AAAA, "2001:502:7094::30", "j", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 4, dns.A, "192.54.112.30", "h", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 5, dns.AAAA, "2001:502:8cc::30", "h", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 6, dns.A, "192.31.80.30", "d", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 7, dns.AAAA, "2001:500:856e::30", "d", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 8, dns.A, "192.33.14.30", "b", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 9, dns.AAAA, "2001:503:231d::2:30", "b", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 10, dns.A, "192.35.51.30", "f", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 11, dns.AAAA, "2001:503:d414::30", "f", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 12, dns.A, "192.52.178.30", "k", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 13, dns.AAAA, "2001:503:d2d::30", "k", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 14, dns.A, "192.55.83.30", "m", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 15, dns.AAAA, "2001:501:b1f9::30", "m", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 16, dns.A, "192.43.172.30", "i", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 17, dns.AAAA, "2001:503:39c1::30", "i", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 18, dns.A, "192.42.93.30", "g", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 19, dns.AAAA, "2001:503:eea3::30", "g", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 20, dns.A, "192.5.6.30", "a", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 21, dns.AAAA, "2001:503:a83e::2:30", "a", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 22, dns.A, "192.26.92.30", "c", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 23, dns.AAAA, "2001:503:83eb::30", "c", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 24, dns.A, "192.12.94.30", "e", "gtld-servers", "net")
+	checkIP(t, rsp.Additional, 25, dns.AAAA, "2001:502:1ca1::30", "e", "gtld-servers", "net")
 }
 
 func checkNS(t *testing.T, authorities []dns.Resource, i int, expNames ...string) {
@@ -971,7 +971,7 @@ var compressionWithLoop = []byte{
 }
 
 func TestCompressionWithLoop(t *testing.T) {
-	_, err := dns.ParseDNSMessage(compressionWithLoop)
+	_, err := dns.ParseMessage(compressionWithLoop)
 	if err != dns.ErrInvalidCompression {
 		t.Errorf("expected error for invalid compression, but got %s", err)
 	}
@@ -984,7 +984,7 @@ func TestShortBufGoogleRootAResponse(t *testing.T) {
 // checkShortBufProducesProperError parses every possible truncation of the msg
 // and expects them all to return ErrShortBuf
 func checkShortBufProducesProperError(t *testing.T, msg []byte) {
-	_, err := dns.ParseDNSMessage(msg)
+	_, err := dns.ParseMessage(msg)
 	if err != nil {
 		t.Errorf(
 			"expected no error when parsing entire message, but got %s",
@@ -994,7 +994,7 @@ func checkShortBufProducesProperError(t *testing.T, msg []byte) {
 
 	for trim := 1; trim <= len(msg); trim++ {
 		shortMsg := msg[:len(msg)-trim]
-		_, err := dns.ParseDNSMessage(shortMsg)
+		_, err := dns.ParseMessage(shortMsg)
 		if err != io.ErrShortBuffer {
 			t.Errorf(
 				"expected short buffer error after trimming %d bytes from message, but got %s",
@@ -1006,7 +1006,7 @@ func checkShortBufProducesProperError(t *testing.T, msg []byte) {
 
 func BenchmarkParseLargeMessage(b *testing.B) {
 	for b.Loop() {
-		_, err := dns.ParseDNSMessage(googleRootAResponse)
+		_, err := dns.ParseMessage(googleRootAResponse)
 		if err != nil {
 			b.Errorf("unexpected parsing error: %s", err)
 		}
@@ -1015,7 +1015,7 @@ func BenchmarkParseLargeMessage(b *testing.B) {
 
 func BenchmarkParseSmallMessage(b *testing.B) {
 	for b.Loop() {
-		_, err := dns.ParseDNSMessage(googleQuery)
+		_, err := dns.ParseMessage(googleQuery)
 		if err != nil {
 			b.Errorf("unexpected parsing error: %s", err)
 		}
@@ -1023,7 +1023,7 @@ func BenchmarkParseSmallMessage(b *testing.B) {
 }
 
 func BenchmarkWriteSmallMessage(b *testing.B) {
-	msg, err := dns.ParseDNSMessage(googleQuery)
+	msg, err := dns.ParseMessage(googleQuery)
 	if err != nil {
 		b.Errorf("unexpected parsing error: %s", err)
 	}
@@ -1037,7 +1037,7 @@ func BenchmarkWriteSmallMessage(b *testing.B) {
 }
 
 func BenchmarkWriteLargeMessage(b *testing.B) {
-	msg, err := dns.ParseDNSMessage(googleRootAResponse)
+	msg, err := dns.ParseMessage(googleRootAResponse)
 	if err != nil {
 		b.Errorf("unexpected parsing error: %s", err)
 	}

@@ -37,7 +37,7 @@ func (s *Server) Listen() error {
 			return err
 		}
 		fmt.Printf("Received %d bytes from %s: %s\n", n, addr.String(), string(buffer[:n]))
-		msg, err := ParseDNSMessage(buffer[:n])
+		msg, err := ParseMessage(buffer[:n])
 		if err != nil {
 			fmt.Printf("couldn't parse message: %s\n", err)
 			continue
