@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"time"
 )
 
@@ -436,31 +437,30 @@ func parseResource(buf readBuf) (Resource, readBuf, error) {
 	ttl, _ := as[time.Duration](buf.Uint32())
 	ttl = time.Second * ttl
 
-	resourceDataLen, _ := buf.Uint16()
-	resourceDataBuf := buf // copy to preserve position
-	resourceDataBytes, err := buf.Slice(int(resourceDataLen))
+	resourceDataLen, err := buf.Uint16()
 
 	if err != nil {
 		return Resource{}, buf, err
 	}
 
 	var resourceData any
-	if qType == A && resourceDataLen == 4 {
-		resourceData = net.IP(resourceDataBytes)
+	if qType == A && resourceDataLen == 4 || qType == AAAA && resourceDataLen == 16 {
+		bytes, err := buf.Slice(int(resourceDataLen))
+		if err != nil {
+			return Resource{}, buf, err
+		}
+		resourceData = net.IP(slices.Clone(bytes))
 
 	} else if qType == NS {
-		resourceData, _, err = parseName(resourceDataBuf)
+		resourceData, buf, err = parseName(buf)
 		if err != nil {
 			return Resource{}, buf, err
 		}
 
-	} else if qType == AAAA && resourceDataLen == 16 {
-		resourceData = net.IP(resourceDataBytes)
-
 	} else if qType == MX {
-		preference, _ := resourceDataBuf.Uint16()
+		preference, _ := buf.Uint16()
 		var name Name
-		name, _, err = parseName(resourceDataBuf)
+		name, buf, err = parseName(buf)
 		if err != nil {
 			return Resource{}, buf, err
 		}
@@ -470,7 +470,7 @@ func parseResource(buf readBuf) (Resource, readBuf, error) {
 		}
 
 	} else if qType == CNAME {
-		resourceData, _, err = parseName(resourceDataBuf)
+		resourceData, buf, err = parseName(buf)
 		if err != nil {
 			return Resource{}, buf, err
 		}
@@ -478,7 +478,11 @@ func parseResource(buf readBuf) (Resource, readBuf, error) {
 	} else {
 		// fallback on raw bytes
 		// TODO: other types...
-		resourceData = resourceDataBytes
+		bytes, err := buf.Slice(int(resourceDataLen))
+		if err != nil {
+			return Resource{}, buf, err
+		}
+		resourceData = slices.Clone(bytes)
 	}
 
 	return Resource{

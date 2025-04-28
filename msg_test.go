@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-// TODO: fuzz testing
-
 // generated with `host google.com`
 var googleQuery = []byte{
 	0xc2, 0x1b, // 0,  id
@@ -333,6 +331,10 @@ func roundTripMessage(t *testing.T, bytes []byte) {
 	if err != nil {
 		t.Fatalf("unexpected error re-parsing: %s", err)
 	}
+
+	// repurpose the buffer to make sure the message is not keeping any
+	// references to it:
+	clear(buf)
 
 	if !reflect.DeepEqual(msg, q2) {
 		t.Errorf("re-parsed message is not same as original\n  exp %#v\n  got %#v",
