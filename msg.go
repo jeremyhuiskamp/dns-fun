@@ -194,17 +194,19 @@ func writeVariableLengthDataToBuf(buf []byte, doWrite func(buf []byte) []byte) [
 }
 
 func writeName(buf []byte, nc NameCompressor, name Name) []byte {
-	skip, offset := nc.Lookup(name)
-	nc.Record(uint16(len(buf)), name)
+	prefix, pointer := nc.Compress(uint16(len(buf)), name)
 
-	for _, label := range name[:skip] {
-		// TODO: refuse to encode things more than 64 bytes?
+	for _, label := range prefix {
+		// TODO: refuse to encode invalid labels?
+		// - more than 64 bytes (impossible to represent)
+		// - 0 bytes (subsequent labels won't be parsed)
+		// - contain '.'
 		buf = append(buf, byte(len(label)))
 		buf = append(buf, []byte(label)...)
 	}
 
-	if offset > 0 {
-		buf = be.AppendUint16(buf, withCompressionFlag(offset))
+	if pointer > 0 {
+		buf = be.AppendUint16(buf, withCompressionFlag(pointer))
 	} else {
 		buf = append(buf, 0)
 	}
@@ -273,7 +275,6 @@ const (
 	StandardQuery       OpCode = 0
 	InverseQuery        OpCode = 1
 	ServerStatusRequest OpCode = 2
-	OpCodeMask          byte   = 0b0111_1000
 )
 
 //go:generate stringer -type=ResponseCode

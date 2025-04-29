@@ -1,5 +1,10 @@
 package dns
 
+import (
+	"fmt"
+	"strings"
+)
+
 // NameCompressor keeps track of which names have been
 // written at which offsets in a message.
 type NameCompressor struct {
@@ -19,76 +24,67 @@ type recordedLabel struct {
 }
 
 func (rn recordedLabel) findChild(label Label) *recordedLabel {
-	for _, child := range rn.children {
+	// Looping and comparing isn't efficient, but for the smallish amount of
+	// data in one dns message, it's generally faster and allocates less
+	// than using maps.
+	for i, child := range rn.children {
 		if child.label == label {
-			return child
+			return rn.children[i]
 		}
 	}
 	return nil
 }
 
-// Record that the given name was written at the given offset.
-func (nc *NameCompressor) Record(offset uint16, name Name) {
-	offsets := matchingOffsets(offset, name)
-
-	addToTree(nc.root, name, offsets)
+func (rn *recordedLabel) record(newLabels []Label, offset uint16) {
+	for i := len(newLabels) - 1; i >= 0; i-- {
+		label := newLabels[i]
+		rn.children = append(rn.children, &recordedLabel{
+			label:  label,
+			offset: offsetAfter(offset, newLabels[:i]),
+		})
+		rn = rn.children[len(rn.children)-1]
+	}
 }
 
-func matchingOffsets(offset uint16, name Name) []uint16 {
-	offsets := make([]uint16, len(name))
-	runningOffset := offset
-	for i, label := range name {
-		offsets[i] = runningOffset
+func offsetAfter(base uint16, labels []Label) uint16 {
+	runningOffset := base
+	for _, label := range labels {
 		runningOffset += uint16(len(label) + 1)
 	}
-	return offsets
+	return runningOffset
 }
 
-func addToTree(parent *recordedLabel, name Name, offsets []uint16) {
-	for i := len(name) - 1; i >= 0; i-- {
-		label := name[i]
-
-		matchingChild := parent.findChild(label)
-		if matchingChild == nil {
-			matchingChild = &recordedLabel{
-				label:  label,
-				offset: offsets[i],
-			}
-			parent.children = append(parent.children, matchingChild)
-		}
-
-		// NB: ignore the new offset if there was already
-		// a matching child.  The new offset is probably not
-		// valid because the caller will have already
-		// referenced the matching prefix.
-
-		parent = matchingChild
+func (rn recordedLabel) printTo(buf *strings.Builder, indent int) {
+	fmt.Fprintf(buf, "% *s%s@%d\n", indent, "", rn.label, rn.offset)
+	for _, child := range rn.children {
+		child.printTo(buf, indent+2)
 	}
 }
 
-// Lookup where a name might have been previously recorded.
+// Compress finds a suffix of the name that has already been
+// written and returns the prefix that has not yet been written,
+// if any, as well as the location where the suffix is.  If
+// no suffix has been written, the location is 0 (which is not
+// a valid location for a name in a DNS message).
 //
-// Returns (skip, offset)
-//
-// If the exact name hasn't been recorded, but a parent has,
-// the offset of the parent is returned, and the number of
-// name components before the parent is returned as `skip`,
-// indicating that that many components should be written
-// before referencing the parent.
-//
-// The offset 0 means that the name has never been written
-// (no names may occur in the first 12 bytes of a message).
-func (nc NameCompressor) Lookup(name Name) (int, uint16) {
+// If any prefix of the name hasn't yet been written the compressor
+// remembers that it will be written at the given offset.
+func (nc NameCompressor) Compress(offset uint16, name Name) ([]Label, uint16) {
 	parent := nc.root
 	for i := len(name) - 1; i >= 0; i-- {
-		label := name[i]
-		child := parent.findChild(label)
+		child := parent.findChild(name[i])
 		if child == nil {
-
-			// i corresponds to the child, i+1 to the parent
-			return i + 1, parent.offset
+			prefix := name[:i+1]
+			parent.record(prefix, offset)
+			return prefix, parent.offset
 		}
 		parent = child
 	}
-	return 0, parent.offset
+	return nil, parent.offset
+}
+
+func (nc NameCompressor) String() string {
+	var buf strings.Builder
+	nc.root.printTo(&buf, 0)
+	return buf.String()
 }

@@ -2,15 +2,16 @@ package dns_test
 
 import (
 	"dns"
+	"slices"
 	"testing"
 )
 
 func TestBasicNameCompression(t *testing.T) {
 	nc := dns.NewNameCompressor()
-	nc.Record(5, name("foo", "com"))
-	skip, offset := nc.Lookup(name("foo", "com"))
-	if skip != 0 {
-		t.Errorf("expected not to skip any prefixes, but got %d", skip)
+	nc.Compress(5, name("foo", "com"))
+	prefix, offset := nc.Compress(20, name("foo", "com"))
+	if len(prefix) != 0 {
+		t.Errorf("expected no prefix, but got %q", prefix)
 	}
 	if offset != 5 {
 		t.Errorf("expected to find back offset 5, but got %d", offset)
@@ -19,51 +20,53 @@ func TestBasicNameCompression(t *testing.T) {
 
 func TestReferenceLongerName(t *testing.T) {
 	nc := dns.NewNameCompressor()
-	nc.Record(5, name("foo", "bar", "com"))
+	nc.Compress(5, name("foo", "bar", "com"))
 
-	skip, offset := nc.Lookup(name("bar", "com"))
+	prefix, offset := nc.Compress(20, name("bar", "com"))
 	if offset != 9 { // 5 + len("foo") + 1
 		t.Errorf("expected offset 9, but got %d", offset)
 	}
 
-	if skip != 0 {
-		t.Errorf("expected not to skip any prefixes, but got %d", skip)
+	if len(prefix) != 0 {
+		t.Errorf("expected to skip all prefixes, but got %q", prefix)
 	}
 }
 
 func TestReferenceShorterName(t *testing.T) {
 	nc := dns.NewNameCompressor()
-	nc.Record(5, name("bar", "com"))
+	nc.Compress(5, name("bar", "com"))
 
-	skip, offset := nc.Lookup(name("foo", "bar", "com"))
+	prefix, offset := nc.Compress(20, name("foo", "bar", "com"))
 	if offset != 5 {
 		t.Errorf("expected offset 5, but got %d", offset)
 	}
 
-	if skip != 1 {
-		t.Errorf("expected to skip one prefix, but got %d", skip)
+	if exp := name("foo"); !slices.Equal(prefix, exp) {
+		t.Errorf("expected prefix %q, but got %q", exp, prefix)
 	}
 }
 
 func TestReferenceNameWithSharedParent(t *testing.T) {
 	nc := dns.NewNameCompressor()
-	nc.Record(5, name("qux", "bar", "com"))
+	nc.Compress(5, name("qux", "bar", "com"))
 
-	skip, offset := nc.Lookup(name("foo", "bar", "com"))
+	prefix, offset := nc.Compress(20, name("foo", "bar", "com"))
 	if offset != 9 { // start of "bar"
 		t.Errorf("expected offset 9, but got %d", offset)
 	}
 
-	if skip != 1 {
-		t.Errorf("expected to skip one prefix, but got %d", skip)
+	if exp := name("foo"); !slices.Equal(prefix, exp) {
+		t.Errorf("expected prefix %q, but got %q", exp, prefix)
 	}
 }
 
 func TestLookupUnknownName(t *testing.T) {
 	nc := dns.NewNameCompressor()
-	// skip is irrelevant if no offset is found
-	_, offset := nc.Lookup(name("foo", "com"))
+	prefix, offset := nc.Compress(20, name("foo", "com"))
 	if offset != 0 {
 		t.Errorf("expected to find no offset, but got %d", offset)
+	}
+	if exp := name("foo", "com"); !slices.Equal(exp, prefix) {
+		t.Errorf("expected prefix %q, but got %q", exp, prefix)
 	}
 }
