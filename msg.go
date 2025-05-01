@@ -348,9 +348,6 @@ func (f Flags) ResponseCode() ResponseCode {
 	return ResponseCode(uint16(f) & 0b1111)
 }
 
-type Label string
-type Name []Label
-
 type Question struct {
 	Name  Name
 	Type  QueryType
