@@ -505,15 +505,14 @@ var ErrInvalidCompression = errors.New("invalid name compression")
 const maxCompressionRedirects = 128
 
 func parseName(buf readBuf) (Name, readBuf, error) {
-	return parseNameRec(buf, maxCompressionRedirects)
+	return parseNameRec(buf, nil, maxCompressionRedirects)
 }
 
-func parseNameRec(buf readBuf, remainingCompressionRedirects int) (Name, readBuf, error) {
+func parseNameRec(buf readBuf, name Name, remainingCompressionRedirects int) (Name, readBuf, error) {
 	if remainingCompressionRedirects < 1 {
 		return nil, buf, ErrInvalidCompression
 	}
 
-	var name Name
 	labelLen, err := buf.Byte()
 	if err != nil {
 		return nil, buf, err
@@ -526,11 +525,12 @@ func parseNameRec(buf readBuf, remainingCompressionRedirects int) (Name, readBuf
 				return nil, buf, err
 			}
 			newOffset = withoutCompressionFlag(newOffset)
-			pointerLabels, _, err := parseNameRec(
+			name, _, err := parseNameRec(
 				buf.WithPos(int(newOffset)),
+				name,
 				remainingCompressionRedirects-1,
 			)
-			return append(name, pointerLabels...), buf, err
+			return name, buf, err
 		}
 
 		// TODO: punycode parsing?
