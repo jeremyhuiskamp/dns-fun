@@ -505,7 +505,10 @@ var ErrInvalidCompression = errors.New("invalid name compression")
 const maxCompressionRedirects = 128
 
 func parseName(buf readBuf) (Name, readBuf, error) {
-	return parseNameRec(buf, nil, maxCompressionRedirects)
+	// pre-allocate a reasonable number of spaces to avoid re-allocation as
+	// we discover more of the name:
+	name := make(Name, 0, 4)
+	return parseNameRec(buf, name, maxCompressionRedirects)
 }
 
 func parseNameRec(buf readBuf, name Name, remainingCompressionRedirects int) (Name, readBuf, error) {
