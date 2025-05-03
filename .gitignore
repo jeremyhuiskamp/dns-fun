@@ -1,3 +1,6 @@
 *.prof
+# binaries left for pprof analysis:
+*.test
 pprof/
 pcap/
+

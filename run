@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+__bench() {
+  # other args that might be useful:
+  # -skip Test
+  # -bench Write 
+  #   (for only doing certain benchmarks, overrides the existing '.' value)
+  go test -bench . -test.benchmem "$@"
+}
+
+__profile-cpu() {
+  mkdir -p ./pprof
+  go test -bench . -cpuprofile ./pprof/cpu.prof "$@"
+  go tool pprof -hide 'runtime.*' -http localhost:8081 ./pprof/cpu.prof
+}
+
+__profile-mem() {
+  mkdir -p ./pprof
+  go test -bench . -memprofile ./pprof/mem.prof "$@"
+  go tool pprof -hide 'runtime.*' -http localhost:8081 ./pprof/mem.prof
+}
+
+# Question: can we combine cpu and mem profiling in one web interface?
+
+__fuzz() {
+  go test -fuzz . -fuzztime 1m "$@"
+}
+
+CMD=${1:-}
+shift || true
+if [[ $(type -t "__${CMD}") == function ]]; then
+  "__${CMD}" "$@"
+else
+  echo -e "available sub-commands:\n$(declare -F | sed -n "s/declare -f __/ - /p")"
+fi
