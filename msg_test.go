@@ -591,7 +591,7 @@ func TestCompressionMXResponse(t *testing.T) {
 }
 
 // Obtained by querying a root server for google.com, A records.
-// Due to the size, this happened over tcp.  The 16-byte length
+// Due to the size, this happened over tcp.  The 16-bit length
 // prefix has been removed.
 var googleRootAResponse = []byte{
 	0x29, 0xc0, // ID
@@ -922,6 +922,7 @@ func TestCompressionRootAResponse(t *testing.T) {
 	reserialisingShouldntExpand(t, googleRootAResponse)
 }
 
+// found with go fuzz
 var compressionWithLoop = []byte{
 	0x67, 0x6c, // ID
 	0x01, 0x00, // flags
@@ -963,52 +964,6 @@ func checkShortBufProducesProperError(t *testing.T, msg []byte) {
 				"expected short buffer error after trimming %d bytes from message, but got %s",
 				trim, err,
 			)
-		}
-	}
-}
-
-func BenchmarkParseLargeMessage(b *testing.B) {
-	for b.Loop() {
-		_, err := dns.ParseMessage(googleRootAResponse)
-		if err != nil {
-			b.Errorf("unexpected parsing error: %s", err)
-		}
-	}
-}
-
-func BenchmarkParseSmallMessage(b *testing.B) {
-	for b.Loop() {
-		_, err := dns.ParseMessage(googleQuery)
-		if err != nil {
-			b.Errorf("unexpected parsing error: %s", err)
-		}
-	}
-}
-
-func BenchmarkWriteSmallMessage(b *testing.B) {
-	msg, err := dns.ParseMessage(googleQuery)
-	if err != nil {
-		b.Errorf("unexpected parsing error: %s", err)
-	}
-	buf := make([]byte, 0, 1024)
-	for b.Loop() {
-		_, err := msg.WriteTo(buf)
-		if err != nil {
-			b.Errorf("unexpected writing error: %s", err)
-		}
-	}
-}
-
-func BenchmarkWriteLargeMessage(b *testing.B) {
-	msg, err := dns.ParseMessage(googleRootAResponse)
-	if err != nil {
-		b.Errorf("unexpected parsing error: %s", err)
-	}
-	buf := make([]byte, 0, 1024)
-	for b.Loop() {
-		_, err := msg.WriteTo(buf)
-		if err != nil {
-			b.Errorf("unexpected writing error: %s", err)
 		}
 	}
 }
