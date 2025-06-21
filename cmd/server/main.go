@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"time"
 )
 
 func main() {
@@ -46,57 +45,44 @@ func (s *Server) Listen() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Received %d bytes from %s: %s\n", n, addr.String(), string(buffer[:n]))
+		fmt.Printf("Received %d bytes from %s\n", n, addr.String())
 		msg, err := dns.ParseMessage(buffer[:n])
 		if err != nil {
 			fmt.Printf("couldn't parse message: %s\n", err)
 			continue
 		}
 
-		fmt.Printf("%s\n", msg.String())
-		rsp := dns.MakeResponse(msg)
-		for _, question := range msg.Questions {
-			answer := dns.Resource{
-				Name:  question.Name,
-				Class: question.Class,
-				Type:  question.Type,
-				TTL:   120 * time.Second,
+		go handle(msg, conn, addr)
+	}
+}
+
+func handle(qry dns.Message, conn *net.UDPConn, rspAddr *net.UDPAddr) {
+	fmt.Printf("%s\n", qry.String())
+
+	rsp := dns.MakeResponse(qry)
+	for _, question := range qry.Questions {
+		if question.Type == dns.A {
+			resolved, err := resolve.Resolve(question.Name)
+			if err != nil {
+				fmt.Printf("couldn't resolve %q: %s\n", question.Name, err)
+			} else {
+				rsp.Answers = append(rsp.Answers, resolved.Answers...)
+				rsp.Authorities = append(rsp.Authorities, resolved.Authorities...)
+				rsp.Additional = append(rsp.Additional, resolved.Additional...)
 			}
-			if question.Type == dns.A {
-				resolved, err := resolve.Resolve(question.Name)
-				if err != nil {
-					fmt.Printf("couldn't resolve %q: %s\n", question.Name, err)
-					// now what???
-				} else {
-					rsp.Answers = append(rsp.Answers, resolved.Answers...)
-					rsp.Authorities = append(rsp.Authorities, resolved.Authorities...)
-					rsp.Additional = append(rsp.Additional, resolved.Additional...)
-				}
-			} else if question.Type == dns.AAAA {
-				answer.Data = net.ParseIP("1.2.3.4")
-				rsp.Answers = append(rsp.Answers, answer)
-			} else if question.Type == dns.MX {
-				answer.Data = dns.MXRecord{
-					Preference: 10,
-					MailExchange: dns.Name([]dns.Label{
-						"smtp",
-						"test",
-						"com",
-					}),
-				}
-				rsp.Answers = append(rsp.Answers, answer)
-			}
-		}
-		rspBuf := buffer[:0]
-		rspBuf, err = rsp.WriteTo(rspBuf)
-		if err != nil {
-			fmt.Printf("failed to write response: %s\n", err)
 			continue
 		}
+	}
 
-		_, err = conn.WriteToUDP(rspBuf, addr)
-		if err != nil {
-			fmt.Printf("failed to send response to %s: %s", addr.String(), err)
-		}
+	rspBuf := make([]byte, 0, 1024)
+	rspBuf, err := rsp.WriteTo(rspBuf)
+	if err != nil {
+		fmt.Printf("failed to write response: %s\n", err)
+		return
+	}
+
+	_, err = conn.WriteToUDP(rspBuf, rspAddr)
+	if err != nil {
+		fmt.Printf("failed to send response to %s: %s", rspAddr.String(), err)
 	}
 }
