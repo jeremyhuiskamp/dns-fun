@@ -168,6 +168,13 @@ func writeResource(buf []byte, nc NameCompressor, res Resource) ([]byte, error) 
 			buf = be.AppendUint16(buf, mx.Preference)
 			return writeName(buf, nc, mx.MailExchange)
 		})
+	case SOA:
+		soa, ok := res.Data.(SOARecord)
+		if !ok {
+			return nil, fmt.Errorf("mismatched resource type %s / %T",
+				res.Type, res.Data)
+		}
+		buf = writeVariableLengthDataToBuf(buf, writeSOA(soa, nc))
 	default:
 		bytes, ok := res.Data.([]byte)
 		if !ok {
@@ -179,6 +186,19 @@ func writeResource(buf []byte, nc NameCompressor, res Resource) ([]byte, error) 
 	}
 
 	return buf, nil
+}
+
+func writeSOA(soa SOARecord, nc NameCompressor) func(buf []byte) []byte {
+	return func(buf []byte) []byte {
+		buf = writeName(buf, nc, soa.MName)
+		buf = writeName(buf, nc, soa.RName)
+		buf = be.AppendUint32(buf, soa.Serial)
+		buf = be.AppendUint32(buf, uint32(soa.Refresh.Seconds()))
+		buf = be.AppendUint32(buf, uint32(soa.Retry.Seconds()))
+		buf = be.AppendUint32(buf, uint32(soa.Expire.Seconds()))
+		buf = be.AppendUint32(buf, uint32(soa.MinTTL.Seconds()))
+		return buf
+	}
 }
 
 // writeVariableLengthDataToBuf wraps another function to
@@ -432,8 +452,7 @@ func parseResource(buf readBuf) (Resource, readBuf, error) {
 	qType, _ := as[QueryType](buf.Uint16())
 	qClass, _ := as[QueryClass](buf.Uint16())
 
-	ttl, _ := as[time.Duration](buf.Uint32())
-	ttl = time.Second * ttl
+	ttl, _ := seconds(buf.Uint32())
 
 	resourceDataLen, err := buf.Uint16()
 
@@ -471,6 +490,38 @@ func parseResource(buf readBuf) (Resource, readBuf, error) {
 		resourceData, buf, err = parseName(buf)
 		if err != nil {
 			return Resource{}, buf, err
+		}
+
+	} else if qType == SOA {
+		var mName, rName Name
+		mName, buf, err = parseName(buf)
+		if err != nil {
+			return Resource{}, buf, err
+		}
+
+		rName, buf, err = parseName(buf)
+		if err != nil {
+			return Resource{}, buf, err
+		}
+
+		serial, _ := buf.Uint32()
+		refresh, _ := seconds(buf.Int32())
+		retry, _ := seconds(buf.Int32())
+		expire, _ := seconds(buf.Int32())
+		minTTL, err := seconds(buf.Uint32())
+
+		if err != nil {
+			return Resource{}, buf, err
+		}
+
+		resourceData = SOARecord{
+			MName:   mName,
+			RName:   rName,
+			Serial:  serial,
+			Refresh: refresh,
+			Retry:   retry,
+			Expire:  expire,
+			MinTTL:  minTTL,
 		}
 
 	} else {
@@ -571,6 +622,18 @@ type MXRecord struct {
 	MailExchange Name
 }
 
+type SOARecord struct {
+	MName  Name
+	RName  Name
+	Serial uint32
+	// NB: not all duration values can be represented
+	// on the wire in DNS:
+	Refresh time.Duration
+	Retry   time.Duration
+	Expire  time.Duration
+	MinTTL  time.Duration
+}
+
 type Integer interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64 |
 		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
@@ -582,6 +645,13 @@ type Integer interface {
 // variable.
 func as[Out, In Integer](in In, err error) (Out, error) {
 	return Out(in), err
+}
+
+// seconds converts an integer type to a duration in seconds
+// even in the presence of an error.
+func seconds[In Integer](in In, err error) (time.Duration, error) {
+	d, err := as[time.Duration](in, err)
+	return d * time.Second, err
 }
 
 var be = binary.BigEndian

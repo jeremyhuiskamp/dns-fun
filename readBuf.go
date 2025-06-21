@@ -49,6 +49,11 @@ func (b *readBuf) Uint32() (uint32, error) {
 	return be.Uint32(b.buf[p:]), nil
 }
 
+func (b *readBuf) Int32() (int32, error) {
+	u, err := b.Uint32()
+	return int32(u), err
+}
+
 func (b *readBuf) Slice(size int) ([]byte, error) {
 	p, ok := b.move(size)
 	if !ok {

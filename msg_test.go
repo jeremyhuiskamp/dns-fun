@@ -968,6 +968,105 @@ func checkShortBufProducesProperError(t *testing.T, msg []byte) {
 	}
 }
 
+var googleSOAResponse = []byte{
+	0x0f, 0x40, // ID
+	0x81, 0x80, // flags
+	0x00, 0x01, // # questions
+	0x00, 0x01, // # answers
+	0x00, 0x00, // # authority RRs
+	0x00, 0x00, // # additional RRs
+	// question
+	0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, // "google"
+	0x03, 0x63, 0x6f, 0x6d, // "com"
+	0x00,       // end
+	0x00, 0x06, // SOA
+	0x00, 0x01, // IN
+	// answer
+	0xc0, 0x0c, // "google.com"
+	0x00, 0x06, // SOA
+	0x00, 0x01, // IN
+	0x00, 0x00, 0x00, 0x2d, // TTL 45s
+	0x00, 0x26, // 38 bytes of data
+	// primary name server
+	0x03, 0x6e, 0x73, 0x31, // "ns1"
+	0xc0, 0x0c, // "google.com"
+	// responsible authority's mailbox
+	0x09, 0x64, 0x6e, 0x73, 0x2d, 0x61, 0x64, 0x6d, 0x69, 0x6e, // "dns-admin"
+	0xc0, 0x0c, // "google.com"
+	0x2e, 0x1c, 0xa6, 0xa2, // serial number = 773629602
+	0x00, 0x00, 0x03, 0x84, // refresh interval = 15m
+	0x00, 0x00, 0x03, 0x84, // retry interval = 15m
+	0x00, 0x00, 0x07, 0x08, // expire limit = 30m
+	0x00, 0x00, 0x00, 0x3c, // minimum TTL = 1m
+}
+
+func TestParseGoogleSOAResponse(t *testing.T) {
+	rsp, err := dns.ParseMessage(googleSOAResponse)
+	if err != nil {
+		t.Fatalf("unexpected error parsing: %s", err)
+	}
+
+	if len(rsp.Answers) != 1 {
+		t.Fatalf("expected 1 answers, got %d", len(rsp.Answers))
+	}
+
+	answer := rsp.Answers[0]
+	if !slices.Equal(answer.Name, name("google", "com")) {
+		t.Errorf("expected answer for google.com, got %q",
+			answer.Name)
+	}
+
+	if got := answer.Type; got != dns.SOA {
+		t.Errorf("expected query type SOA, got %s", got)
+	}
+
+	if got := answer.Class; got != dns.IN {
+		t.Errorf("expected query class IN, got %s", got)
+	}
+
+	if answer.TTL != 45*time.Second {
+		t.Errorf("expected ttl 5m but got %s", answer.TTL)
+	}
+
+	if soa, ok := answer.Data.(dns.SOARecord); !ok {
+		t.Errorf("expected SOA record but got %T", answer.Data)
+	} else {
+		if !slices.Equal(soa.MName, name("ns1", "google", "com")) {
+			t.Errorf("expected mname ns1.google.com, got %q",
+				soa.MName)
+		}
+
+		if !slices.Equal(soa.RName, name("dns-admin", "google", "com")) {
+			t.Errorf("expected mname dns-admin.google.com, got %q",
+				soa.RName)
+		}
+
+		if soa.Serial != 773629602 {
+			t.Errorf("expected serial number 773629602, got %d", soa.Serial)
+		}
+
+		if soa.Refresh != 15*time.Minute {
+			t.Errorf("expected refresh 15m, got %s", soa.Refresh)
+		}
+
+		if soa.Retry != 15*time.Minute {
+			t.Errorf("expected retry 15m, got %s", soa.Retry)
+		}
+
+		if soa.Expire != 30*time.Minute {
+			t.Errorf("expected expire 30m, got %s", soa.Expire)
+		}
+
+		if soa.MinTTL != time.Minute {
+			t.Errorf("expected min ttl 1m, got %s", soa.MinTTL)
+		}
+	}
+}
+
+func TestRoundTripSOAResponse(t *testing.T) {
+	roundTripMessage(t, googleSOAResponse)
+}
+
 func name(labels ...dns.Label) dns.Name {
 	return dns.Name(labels)
 }
