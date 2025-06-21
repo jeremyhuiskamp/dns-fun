@@ -307,71 +307,6 @@ func checkNameAndData(
 	}
 }
 
-func TestRoundTripQuery(t *testing.T) {
-	roundTripMessage(t, googleQuery)
-}
-
-func TestRoundTripResponse(t *testing.T) {
-	roundTripMessage(t, googleResponse)
-}
-
-func roundTripMessage(t *testing.T, bytes []byte) {
-	msg, err := dns.ParseMessage(bytes)
-	if err != nil {
-		t.Fatalf("unexpected error parsing: %s", err)
-	}
-
-	var buf []byte
-	buf, err = msg.WriteTo(buf)
-	if err != nil {
-		t.Fatalf("unexpected error writing: %s", err)
-	}
-
-	q2, err := dns.ParseMessage(buf)
-	if err != nil {
-		t.Fatalf("unexpected error re-parsing: %s", err)
-	}
-
-	// repurpose the buffer to make sure the message is not keeping any
-	// references to it:
-	clear(buf)
-
-	if !reflect.DeepEqual(msg, q2) {
-		t.Errorf("re-parsed message is not same as original\n  exp %#v\n  got %#v",
-			msg, q2)
-	}
-}
-
-func TestCompressionBasicQuery(t *testing.T) {
-	reserialisingShouldntExpand(t, googleQuery)
-}
-
-func TestCompressionBasicResponse(t *testing.T) {
-	reserialisingShouldntExpand(t, googleResponse)
-}
-
-func TestCompressionResponseWithCNAME(t *testing.T) {
-	reserialisingShouldntExpand(t, cnameWithMultipleAnswers)
-}
-
-func reserialisingShouldntExpand(t *testing.T, original []byte) {
-	msg, err := dns.ParseMessage(original)
-	if err != nil {
-		t.Fatalf("unexpected error parsing: %s", err)
-	}
-
-	var reencoded []byte
-	reencoded, err = msg.WriteTo(reencoded)
-	if err != nil {
-		t.Fatalf("unexpected error writing: %s", err)
-	}
-
-	if len(reencoded) > len(original) {
-		t.Errorf("reencoded message was larger than original (%d > %d)",
-			len(reencoded), len(original))
-	}
-}
-
 func TestMakeResponse(t *testing.T) {
 	q, err := dns.ParseMessage(googleQuery)
 	if err != nil {
@@ -488,14 +423,6 @@ func TestParseAAAAResponse(t *testing.T) {
 	}
 }
 
-func TestRoundTripAAAAResponse(t *testing.T) {
-	roundTripMessage(t, googleAAAAResponse)
-}
-
-func TestCompressionAAAAResponse(t *testing.T) {
-	reserialisingShouldntExpand(t, googleAAAAResponse)
-}
-
 var googleMXResponse = []byte{
 	0x8a, 0xb1,
 	0x81, 0x80,
@@ -580,14 +507,6 @@ func TestParseMXResponse(t *testing.T) {
 			}
 		}
 	}
-}
-
-func TestRoundTripMXResponse(t *testing.T) {
-	roundTripMessage(t, googleMXResponse)
-}
-
-func TestCompressionMXResponse(t *testing.T) {
-	reserialisingShouldntExpand(t, googleMXResponse)
 }
 
 // Obtained by querying a root server for google.com, A records.
@@ -914,14 +833,6 @@ func checkIP(
 	}
 }
 
-func TestRoundTripRootAResponse(t *testing.T) {
-	roundTripMessage(t, googleRootAResponse)
-}
-
-func TestCompressionRootAResponse(t *testing.T) {
-	reserialisingShouldntExpand(t, googleRootAResponse)
-}
-
 // found with go fuzz
 var compressionWithLoop = []byte{
 	0x67, 0x6c, // ID
@@ -938,33 +849,6 @@ func TestCompressionWithLoop(t *testing.T) {
 	_, err := dns.ParseMessage(compressionWithLoop)
 	if err != dns.ErrInvalidCompression {
 		t.Errorf("expected error for invalid compression, but got %s", err)
-	}
-}
-
-func TestShortBufGoogleRootAResponse(t *testing.T) {
-	checkShortBufProducesProperError(t, googleRootAResponse)
-}
-
-// checkShortBufProducesProperError parses every possible truncation of the msg
-// and expects them all to return ErrShortBuf
-func checkShortBufProducesProperError(t *testing.T, msg []byte) {
-	_, err := dns.ParseMessage(msg)
-	if err != nil {
-		t.Errorf(
-			"expected no error when parsing entire message, but got %s",
-			err,
-		)
-	}
-
-	for trim := 1; trim <= len(msg); trim++ {
-		shortMsg := msg[:len(msg)-trim]
-		_, err := dns.ParseMessage(shortMsg)
-		if err != io.ErrShortBuffer {
-			t.Errorf(
-				"expected short buffer error after trimming %d bytes from message, but got %s",
-				trim, err,
-			)
-		}
 	}
 }
 
@@ -1065,6 +949,108 @@ func TestParseGoogleSOAResponse(t *testing.T) {
 
 func TestRoundTripSOAResponse(t *testing.T) {
 	roundTripMessage(t, googleSOAResponse)
+}
+
+var allValidTestMessages = map[string][]byte{
+	"googleQuery":              googleQuery,
+	"googleResponse":           googleResponse,
+	"cnameWithMultipleAnswers": cnameWithMultipleAnswers,
+	"googleAAAAResponse":       googleAAAAResponse,
+	"googleMXResponse":         googleMXResponse,
+	"googleRootAResponse":      googleRootAResponse,
+	"googleSOAResponse":        googleSOAResponse,
+}
+
+func TestRoundTripMessage(t *testing.T) {
+	for name, msg := range allValidTestMessages {
+		t.Run(name, func(t *testing.T) {
+			roundTripMessage(t, msg)
+		})
+	}
+}
+
+func roundTripMessage(t *testing.T, bytes []byte) {
+	msg, err := dns.ParseMessage(bytes)
+	if err != nil {
+		t.Fatalf("unexpected error parsing: %s", err)
+	}
+
+	var buf []byte
+	buf, err = msg.WriteTo(buf)
+	if err != nil {
+		t.Fatalf("unexpected error writing: %s", err)
+	}
+
+	q2, err := dns.ParseMessage(buf)
+	if err != nil {
+		t.Fatalf("unexpected error re-parsing: %s", err)
+	}
+
+	// repurpose the buffer to make sure the message is not keeping any
+	// references to it:
+	clear(buf)
+
+	if !reflect.DeepEqual(msg, q2) {
+		t.Errorf("re-parsed message is not same as original\n  exp %#v\n  got %#v",
+			msg, q2)
+	}
+}
+
+func TestReserialisingShouldntExpand(t *testing.T) {
+	for name, msg := range allValidTestMessages {
+		t.Run(name, func(t *testing.T) {
+			reserialisingShouldntExpand(t, msg)
+		})
+	}
+}
+
+func reserialisingShouldntExpand(t *testing.T, original []byte) {
+	msg, err := dns.ParseMessage(original)
+	if err != nil {
+		t.Fatalf("unexpected error parsing: %s", err)
+	}
+
+	var reencoded []byte
+	reencoded, err = msg.WriteTo(reencoded)
+	if err != nil {
+		t.Fatalf("unexpected error writing: %s", err)
+	}
+
+	if len(reencoded) > len(original) {
+		t.Errorf("reencoded message was larger than original (%d > %d)",
+			len(reencoded), len(original))
+	}
+}
+
+func TestShortBufProducesProperError(t *testing.T) {
+	for name, msg := range allValidTestMessages {
+		t.Run(name, func(t *testing.T) {
+			checkShortBufProducesProperError(t, msg)
+		})
+	}
+}
+
+// checkShortBufProducesProperError parses every possible truncation of the msg
+// and expects them all to return ErrShortBuf
+func checkShortBufProducesProperError(t *testing.T, msg []byte) {
+	_, err := dns.ParseMessage(msg)
+	if err != nil {
+		t.Errorf(
+			"expected no error when parsing entire message, but got %s",
+			err,
+		)
+	}
+
+	for trim := 1; trim <= len(msg); trim++ {
+		shortMsg := msg[:len(msg)-trim]
+		_, err := dns.ParseMessage(shortMsg)
+		if err != io.ErrShortBuffer {
+			t.Errorf(
+				"expected short buffer error after trimming %d bytes from message, but got %s",
+				trim, err,
+			)
+		}
+	}
 }
 
 func name(labels ...dns.Label) dns.Name {
