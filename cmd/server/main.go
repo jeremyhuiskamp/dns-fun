@@ -61,16 +61,14 @@ func handle(qry dns.Message, conn *net.UDPConn, rspAddr *net.UDPAddr) {
 
 	rsp := dns.MakeResponse(qry)
 	for _, question := range qry.Questions {
-		if question.Type == dns.A {
-			resolved, err := resolve.Resolve(question.Name)
-			if err != nil {
-				fmt.Printf("couldn't resolve %q: %s\n", question.Name, err)
-			} else {
-				rsp.Answers = append(rsp.Answers, resolved.Answers...)
-				rsp.Authorities = append(rsp.Authorities, resolved.Authorities...)
-				rsp.Additional = append(rsp.Additional, resolved.Additional...)
-			}
-			continue
+		fmt.Printf("  %s / %s\n", question.Name, question.Type)
+		resolved, err := resolve.Resolve(question)
+		if err != nil {
+			fmt.Printf("couldn't resolve %q: %s\n", question.Name, err)
+		} else {
+			rsp.Answers = append(rsp.Answers, resolved.Answers...)
+			rsp.Authorities = append(rsp.Authorities, resolved.Authorities...)
+			rsp.Additional = append(rsp.Additional, resolved.Additional...)
 		}
 	}
 

@@ -16,7 +16,11 @@ func main() {
 			log.Printf("skipping invalid name %q: %s\n", name, err)
 			continue
 		}
-		rsp, err := resolve.Resolve(host)
+		rsp, err := resolve.Resolve(dns.Question{
+			Name:  host,
+			Type:  dns.A,
+			Class: dns.IN,
+		})
 		if err != nil {
 			log.Printf("WARN: unable to query: %s", err)
 			continue

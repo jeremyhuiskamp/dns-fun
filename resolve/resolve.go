@@ -12,43 +12,52 @@ var ripeRootIP = net.ParseIP("193.0.14.129")
 
 // Resolve is a very rudimentary iterative resolver.  Only for testing
 // purposes; it has many weaknesses.
-func Resolve(host dns.Name) (dns.Message, error) {
-	return resolve(ripeRootIP, host)
+func Resolve(question dns.Question) (dns.Message, error) {
+	return resolve(ripeRootIP, question)
 }
 
-func resolve(serverIP net.IP, host dns.Name) (dns.Message, error) {
-	rsp, err := query(serverIP, host)
+func resolve(serverIP net.IP, question dns.Question) (dns.Message, error) {
+	rsp, err := query(serverIP, question)
 	if err != nil {
 		return dns.Message{}, err
 	}
 
-	answers := findAnswers(host, rsp)
+	answers := findAnswers(question.Name, rsp)
 	for _, answer := range answers {
-		if answer.Type == dns.A {
+		if answer.Type == question.Type {
+			// TODO: put this check up in findAnswers
 			return rsp, nil
 		}
 
 		// hmm, I bet you can maliciously have CNAMEs pointing at each other?
 		if cname, ok := answer.Data.(dns.Name); ok && answer.Type == dns.CNAME {
-			return resolve(ripeRootIP, cname)
+			return resolve(ripeRootIP, dns.Question{
+				Name:  cname,
+				Type:  question.Type,
+				Class: question.Class,
+			})
 		}
 	}
 
 	nextServerName, nextServerIP := findAnAuthoritativeServer(rsp)
 	if nextServerIP != nil {
 		// a malicious server could also send us into infinite recursion here...
-		return resolve(nextServerIP, host)
+		return resolve(nextServerIP, question)
 	}
 
 	if nextServerName != nil {
-		rsp, err := resolve(ripeRootIP, nextServerName)
+		rsp, err := resolve(ripeRootIP, dns.Question{
+			Name:  nextServerName,
+			Type:  dns.A, // should try AAAA?
+			Class: dns.IN,
+		})
 		if err != nil {
 			return dns.Message{}, nil
 		}
 		answers := findAnswers(nextServerName, rsp)
 		for _, answer := range answers {
 			if ip, ok := answer.Data.(net.IP); ok && answer.Type == dns.A {
-				return resolve(ip, host)
+				return resolve(ip, question)
 			}
 		}
 	}
@@ -56,19 +65,15 @@ func resolve(serverIP net.IP, host dns.Name) (dns.Message, error) {
 	return rsp, errors.New("could not find authoritative server")
 }
 
-func query(serverIP net.IP, host dns.Name) (dns.Message, error) {
+// TODO: multiple questions?
+// Eg, A and AAAA records
+func query(serverIP net.IP, question dns.Question) (dns.Message, error) {
 	// idea for a test framework:
 	// - instrument this to capture each query/response and write it to json
 	// - replace this with a dummy that returns data from the json
 
-	question := dns.Question{
-		Name:  host,
-		Type:  dns.A,
-		Class: dns.IN,
-	}
-
 	query := dns.Message{
-		ID:        123,
+		ID:        123, // TODO: better id!!!
 		Flags:     dns.Flags(0).WithType(dns.Query),
 		Questions: []dns.Question{question},
 	}
