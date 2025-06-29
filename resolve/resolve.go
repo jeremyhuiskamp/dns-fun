@@ -31,11 +31,18 @@ func resolve(serverIP net.IP, question dns.Question) (dns.Message, error) {
 
 		// hmm, I bet you can maliciously have CNAMEs pointing at each other?
 		if cname, ok := answer.Data.(dns.Name); ok && answer.Type == dns.CNAME {
-			return resolve(ripeRootIP, dns.Question{
+			rsp, err := resolve(ripeRootIP, dns.Question{
 				Name:  cname,
 				Type:  question.Type,
 				Class: question.Class,
 			})
+			if err != nil {
+				return dns.Message{}, err
+			}
+			// typically servers will return the cname record first
+			// so we should probably do that too?
+			rsp.Answers = append(rsp.Answers, answer)
+			return rsp, nil
 		}
 	}
 
@@ -52,7 +59,7 @@ func resolve(serverIP net.IP, question dns.Question) (dns.Message, error) {
 			Class: dns.IN,
 		})
 		if err != nil {
-			return dns.Message{}, nil
+			return dns.Message{}, err
 		}
 		answers := findAnswers(nextServerName, rsp)
 		for _, answer := range answers {
@@ -106,6 +113,7 @@ func query(serverIP net.IP, question dns.Question) (dns.Message, error) {
 		return dns.Message{}, fmt.Errorf("couldn't read udp message: %s", err)
 	}
 
+	// TODO: validate the msg ID
 	return dns.ParseMessage(rspBuf[:n])
 }
 
@@ -150,7 +158,7 @@ func findAnAuthoritativeServer(rsp dns.Message) (dns.Name, net.IP) {
 			}
 
 			if ip, ok := additional.Data.(net.IP); ok {
-				fmt.Printf("authority: %s, %s, %s\n",
+				fmt.Printf("..authority: %s, %s, %s\n",
 					authority.Name, authorityName, ip)
 				return authorityName, ip
 			}
@@ -159,7 +167,7 @@ func findAnAuthoritativeServer(rsp dns.Message) (dns.Name, net.IP) {
 		// Eg, the "de" authoritative servers know that ns1.google.com is
 		// an authority for google.de, but they don't know the ip address
 		// of ns1.google.com because it's in a different zone!
-		fmt.Printf("authority: %s, %s, ??\n", authority.Name, authorityName)
+		fmt.Printf("..authority: %s, %s, ??\n", authority.Name, authorityName)
 		return authorityName, nil
 	}
 	return nil, nil

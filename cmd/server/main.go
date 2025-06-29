@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"dns"
 	"dns/resolve"
 	"fmt"
@@ -45,7 +46,6 @@ func (s *Server) Listen() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Received %d bytes from %s\n", n, addr.String())
 		msg, err := dns.ParseMessage(buffer[:n])
 		if err != nil {
 			fmt.Printf("couldn't parse message: %s\n", err)
@@ -57,15 +57,14 @@ func (s *Server) Listen() error {
 }
 
 func handle(qry dns.Message, conn *net.UDPConn, rspAddr *net.UDPAddr) {
-	fmt.Printf("%s\n", qry.String())
-
 	rsp := dns.MakeResponse(qry)
 	for _, question := range qry.Questions {
-		fmt.Printf("  %s / %s\n", question.Name, question.Type)
 		resolved, err := resolve.Resolve(question)
 		if err != nil {
-			fmt.Printf("couldn't resolve %q: %s\n", question.Name, err)
+			fmt.Printf("couldn't resolve %q/%s: %s\n",
+				question.Name, question.Type, err)
 		} else {
+			logRsp(question, resolved)
 			rsp.Answers = append(rsp.Answers, resolved.Answers...)
 			rsp.Authorities = append(rsp.Authorities, resolved.Authorities...)
 			rsp.Additional = append(rsp.Additional, resolved.Additional...)
@@ -83,4 +82,13 @@ func handle(qry dns.Message, conn *net.UDPConn, rspAddr *net.UDPAddr) {
 	if err != nil {
 		fmt.Printf("failed to send response to %s: %s", rspAddr.String(), err)
 	}
+}
+
+func logRsp(question dns.Question, rsp dns.Message) {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "%s/%s? -> ", question.Name, question.Type)
+	for _, answer := range rsp.Answers {
+		fmt.Fprintf(&buf, "%s=(%s), ", answer.Name, answer.Data)
+	}
+	fmt.Println(buf.String())
 }

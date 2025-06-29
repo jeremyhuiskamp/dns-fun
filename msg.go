@@ -622,16 +622,29 @@ type MXRecord struct {
 	MailExchange Name
 }
 
+func (mx MXRecord) String() string {
+	return fmt.Sprintf("%d %s", mx.Preference, mx.MailExchange)
+}
+
 type SOARecord struct {
 	MName  Name
 	RName  Name
 	Serial uint32
+
 	// NB: not all duration values can be represented
 	// on the wire in DNS:
+
 	Refresh time.Duration
 	Retry   time.Duration
 	Expire  time.Duration
 	MinTTL  time.Duration
+}
+
+func (s SOARecord) String() string {
+	return fmt.Sprintf("%s %s %d %s %s %s %s",
+		s.MName, s.RName, s.Serial,
+		s.Refresh, s.Retry, s.Expire, s.MinTTL,
+	)
 }
 
 type Integer interface {
