@@ -7,7 +7,13 @@ import (
 
 type Label string
 
-// TODO: Name.Validate(), Name.String()
+// TODO:
+// - Name.Validate() -> return err if not valid
+// - Name.String() -> pretty obvious!
+// - NameOf() -> convenience constructor? should it validate? needs better name...
+//   - maybe it should validate and panic, for convenience...
+//
+// - consider canonicalising to lower-case?
 type Name []Label
 
 var ErrEmtyLabel = errors.New("no label may be empty")
@@ -60,4 +66,28 @@ func (n Name) IsParentOf(other Name) bool {
 
 func (n Name) IsSubdomainOf(other Name) bool {
 	return other.IsParentOf(n)
+}
+
+func (n Name) String() string {
+	// adapted from strings.Join
+	switch len(n) {
+	case 0:
+		return ""
+	case 1:
+		return string(n[0])
+	}
+
+	var l int
+	for _, label := range n {
+		l += len(label)
+	}
+
+	var b strings.Builder
+	b.Grow(l)
+	b.WriteString(string(n[0]))
+	for _, label := range n[1:] {
+		b.WriteString(".")
+		b.WriteString(string(label))
+	}
+	return b.String()
 }
