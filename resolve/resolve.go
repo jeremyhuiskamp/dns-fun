@@ -9,11 +9,37 @@ import (
 )
 
 var ripeRootIP = net.ParseIP("193.0.14.129")
+var cache = NewCache()
 
 // Resolve is a very rudimentary iterative resolver.  Only for testing
 // purposes; it has many weaknesses.
 func Resolve(question dns.Question) (dns.Message, error) {
-	return resolve(ripeRootIP, question)
+	answers, ok := cache.Get(question)
+	if ok && len(answers) > 0 {
+		fmt.Printf("%s/%s? -> cache hit on query\n",
+			question.Name, question.Type)
+
+		// TODO: this is horrible!
+		// - are we sure the cache has answers?
+		// - we shouldn't be faking the rest of the message?
+		return dns.Message{
+			Answers: answers,
+		}, nil
+	}
+
+	msg, err := resolve(ripeRootIP, question)
+	if err != nil {
+		return msg, err
+	}
+
+	// - are the answers always the correct thing to cache?
+	// - what if there are no answers, but there are other
+	//   resources?
+	// - cache the whole message instead?
+	fmt.Printf("%s/%s? -> cached %d answers\n",
+		question.Name, question.Type, len(msg.Answers))
+	cache.Put(question, msg.Answers)
+	return msg, err
 }
 
 func resolve(serverIP net.IP, question dns.Question) (dns.Message, error) {
@@ -31,6 +57,7 @@ func resolve(serverIP net.IP, question dns.Question) (dns.Message, error) {
 
 		// hmm, I bet you can maliciously have CNAMEs pointing at each other?
 		if cname, ok := answer.Data.(dns.Name); ok && answer.Type == dns.CNAME {
+			// TODO: check to see if the name is already in the response
 			rsp, err := resolve(ripeRootIP, dns.Question{
 				Name:  cname,
 				Type:  question.Type,
