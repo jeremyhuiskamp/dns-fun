@@ -25,6 +25,8 @@ type Cache struct {
 }
 
 // TODO: need a strategy for handling TTLs
+// TODO: track some basic stats on cache hits / misses / size
+// TODO: stats on cache locking performance?
 
 func (c Cache) Get(q dns.Question) ([]dns.Resource, bool) {
 	c.mutex.Lock()

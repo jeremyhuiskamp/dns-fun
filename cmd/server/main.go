@@ -58,12 +58,14 @@ func (s *Server) Listen() error {
 
 func handle(qry dns.Message, conn *net.UDPConn, rspAddr *net.UDPAddr) {
 	rsp := dns.MakeResponse(qry)
+	// TODO: reject queries with more than one question
 	for _, question := range qry.Questions {
 		resolved, err := resolve.Resolve(question)
 		if err != nil {
 			fmt.Printf("couldn't resolve %q/%s: %s\n",
 				question.Name, question.Type, err)
 		} else {
+			// TODO: inspect resolved msg header for reply codes
 			logRsp(question, resolved)
 			rsp.Answers = append(rsp.Answers, resolved.Answers...)
 			rsp.Authorities = append(rsp.Authorities, resolved.Authorities...)
